@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -31,7 +31,7 @@ function App() {
   if (loading) return <CargandoApp />
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route
           path="/login"
@@ -74,7 +74,7 @@ function App() {
           element={<Navigate to={user ? '/dashboard' : '/login'} replace />}
         />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
 
