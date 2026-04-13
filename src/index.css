@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colores de Nido */
+  --color-cream: #FAF7F4;
+  --color-white: #FFFFFF;
+  --color-terracota: #D4845A;
+  --color-terracota-dark: #C0614A;
+  --color-salvia: #8BAF8D;
+  --color-text: #2D2926;
+  --color-text-muted: #8C7E75;
+  --color-border: #EDE8E3;
+
+  /* Tipografía */
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #FAF7F4;
+  color: #2D2926;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
