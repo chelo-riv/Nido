@@ -88,8 +88,8 @@ create table wishlist (
   created_at timestamptz default now()
 );
 
--- Lista del súper (hogar)
-create table listas_super (
+-- Lista del súper (hogar). IF NOT EXISTS evita error 42P07 si ya creaste estas tablas antes.
+create table if not exists listas_super (
   id uuid default gen_random_uuid() primary key,
   nombre text not null,
   creado_por uuid references auth.users on delete cascade not null,
@@ -98,7 +98,7 @@ create table listas_super (
   created_at timestamptz default now()
 );
 
-create table items_lista (
+create table if not exists items_lista (
   id uuid default gen_random_uuid() primary key,
   lista_id uuid references listas_super(id) on delete cascade not null,
   nombre text not null,
@@ -123,6 +123,9 @@ create policy "usuarios autenticados" on gastos for all using (auth.role() = 'au
 create policy "usuarios autenticados" on presupuestos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on liquidaciones for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on wishlist for all using (auth.role() = 'authenticated');
+
+drop policy if exists "usuarios autenticados" on listas_super;
+drop policy if exists "usuarios autenticados" on items_lista;
 create policy "usuarios autenticados" on listas_super for all to authenticated using (true) with check (true);
 create policy "usuarios autenticados" on items_lista for all to authenticated using (true) with check (true);
 ```
@@ -133,7 +136,9 @@ create policy "usuarios autenticados" on items_lista for all to authenticated us
 alter table liquidaciones add column if not exists nota text;
 ```
 
-**Lista del súper — error RLS en `items_lista`:** si al agregar un ítem aparece *new row violates row-level security policy*, las tablas existen pero faltan políticas que permitan `INSERT` (o el `WITH CHECK` no aplica). Ejecuta en el SQL Editor (ajusta si tus tablas no están en `public`):
+**Lista del súper — error RLS en `items_lista`:** si al agregar un ítem aparece *new row violates row-level security policy*, las tablas existen pero faltan políticas que permitan `INSERT` (o el `WITH CHECK` no aplica).
+
+Si aparece el error `relation "listas_super" already exists` (42P07), no vuelvas a ejecutar el `create table` del bloque grande del paso 3: las tablas ya existen. Solo ejecuta el siguiente bloque (solo políticas RLS):
 
 ```sql
 do $$
