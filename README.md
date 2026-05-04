@@ -71,6 +71,7 @@ create table liquidaciones (
   pagado_por uuid references auth.users not null,
   pagado_a uuid references auth.users not null,
   fecha date not null default current_date,
+  nota text,
   created_at timestamptz default now()
 );
 
@@ -99,6 +100,12 @@ create policy "usuarios autenticados" on gastos for all using (auth.role() = 'au
 create policy "usuarios autenticados" on presupuestos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on liquidaciones for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on wishlist for all using (auth.role() = 'authenticated');
+```
+
+**Proyectos ya creados:** en el SQL Editor de Supabase, añade la columna opcional de nota en liquidaciones:
+
+```sql
+alter table liquidaciones add column if not exists nota text;
 ```
 
 ### 4. Correr en desarrollo
@@ -130,7 +137,7 @@ src/
 │   ├── Gastos.jsx           # Lista por mes (navegación) + filtros + editar/eliminar inline
 │   ├── AgregarGasto.jsx     # Formulario de nuevo gasto
 │   ├── EditarGasto.jsx      # Formulario de edición (/editar/:id)
-│   ├── Balances.jsx         # Balance neto + desglose + liquidaciones
+│   ├── Balances.jsx         # Balance neto + desglose + liquidaciones (dirección, cantidad, fecha, nota)
 │   ├── Presupuestos.jsx     # Límites por categoría con barra de progreso
 │   ├── Graficas.jsx         # Pie chart por categoría + barras por semana
 │   └── Wishlist.jsx         # Lista de deseos del hogar con prioridades
@@ -165,7 +172,9 @@ Ejemplo:
 El porcentaje es **por gasto**, no global. Cada gasto puede tener su propia proporción.
 
 ### `liquidaciones`
-Pagos para saldar la deuda acumulada. El balance neto se calcula así:
+Pagos para saldar la deuda acumulada. `fecha` decide en qué mes entra el pago para el balance de Balances (solo se cargan liquidaciones del mes en pantalla). `nota` es texto libre opcional (comentario o referencia del traspaso).
+
+El balance neto se calcula así:
 
 ```js
 const balanceBruto = meDebenTotal - deboTotal  // de gastos compartidos
