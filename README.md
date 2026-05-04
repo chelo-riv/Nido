@@ -127,7 +127,7 @@ src/
 ├── pages/
 │   ├── Login.jsx            # Login + Registro (tabs)
 │   ├── Dashboard.jsx        # Resumen del mes + balance + últimos gastos
-│   ├── Gastos.jsx           # Lista filtrable + editar/eliminar inline
+│   ├── Gastos.jsx           # Lista por mes (navegación) + filtros + editar/eliminar inline
 │   ├── AgregarGasto.jsx     # Formulario de nuevo gasto
 │   ├── EditarGasto.jsx      # Formulario de edición (/editar/:id)
 │   ├── Balances.jsx         # Balance neto + desglose + liquidaciones
