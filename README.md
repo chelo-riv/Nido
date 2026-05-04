@@ -88,18 +88,43 @@ create table wishlist (
   created_at timestamptz default now()
 );
 
+-- Lista del súper (hogar)
+create table listas_super (
+  id uuid default gen_random_uuid() primary key,
+  nombre text not null,
+  creado_por uuid references auth.users on delete cascade not null,
+  completada boolean not null default false,
+  completada_en date,
+  created_at timestamptz default now()
+);
+
+create table items_lista (
+  id uuid default gen_random_uuid() primary key,
+  lista_id uuid references listas_super(id) on delete cascade not null,
+  nombre text not null,
+  categoria text not null default 'otros',
+  checked boolean not null default false,
+  checked_por uuid references auth.users on delete set null,
+  checked_en timestamptz,
+  created_at timestamptz default now()
+);
+
 -- RLS: acceso total a usuarios autenticados
 alter table perfiles enable row level security;
 alter table gastos enable row level security;
 alter table presupuestos enable row level security;
 alter table liquidaciones enable row level security;
 alter table wishlist enable row level security;
+alter table listas_super enable row level security;
+alter table items_lista enable row level security;
 
 create policy "usuarios autenticados" on perfiles for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on gastos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on presupuestos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on liquidaciones for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on wishlist for all using (auth.role() = 'authenticated');
+create policy "usuarios autenticados" on listas_super for all to authenticated using (true) with check (true);
+create policy "usuarios autenticados" on items_lista for all to authenticated using (true) with check (true);
 ```
 
 **Proyectos ya creados:** en el SQL Editor de Supabase, añade la columna opcional de nota en liquidaciones:
@@ -107,6 +132,32 @@ create policy "usuarios autenticados" on wishlist for all using (auth.role() = '
 ```sql
 alter table liquidaciones add column if not exists nota text;
 ```
+
+**Lista del súper — error RLS en `items_lista`:** si al agregar un ítem aparece *new row violates row-level security policy*, las tablas existen pero faltan políticas que permitan `INSERT` (o el `WITH CHECK` no aplica). Ejecuta en el SQL Editor (ajusta si tus tablas no están en `public`):
+
+```sql
+do $$
+declare r record;
+begin
+  for r in (select policyname from pg_policies where schemaname = 'public' and tablename = 'listas_super') loop
+    execute format('drop policy if exists %I on listas_super', r.policyname);
+  end loop;
+  for r in (select policyname from pg_policies where schemaname = 'public' and tablename = 'items_lista') loop
+    execute format('drop policy if exists %I on items_lista', r.policyname);
+  end loop;
+end $$;
+
+alter table listas_super enable row level security;
+alter table items_lista enable row level security;
+
+create policy "usuarios autenticados" on listas_super
+  for all to authenticated using (true) with check (true);
+
+create policy "usuarios autenticados" on items_lista
+  for all to authenticated using (true) with check (true);
+```
+
+Mismo criterio que el resto de la app: cualquier usuario **autenticado** puede leer y escribir (hogar de dos personas sin `hogar_id`).
 
 ### 4. Correr en desarrollo
 ```bash
