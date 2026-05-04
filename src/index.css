@@ -35,3 +35,22 @@ html, body {
   display: flex;
   flex-direction: column;
 }
+
+/* Ocultar scrollbar horizontal en carouseles de pills */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Input reutilizable */
+.input-base {
+  width: 100%;
+  background: #FFFFFF;
+  border: 1px solid #EDE8E3;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #2D2926;
+  outline: none;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.input-base::placeholder { color: #8C7E75; }
+.input-base:focus { border-color: #D4845A; }

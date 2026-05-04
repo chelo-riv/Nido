@@ -9,6 +9,15 @@ import Balances from './pages/Balances'
 import Presupuestos from './pages/Presupuestos'
 import Graficas from './pages/Graficas'
 import Wishlist from './pages/Wishlist'
+import Hogar from './pages/Hogar'
+import Focos from './pages/Focos'
+import ListaSuper from './pages/ListaSuper'
+import ListaDetalle from './pages/ListaDetalle'
+import Tareas from './pages/Tareas'
+import NuevaTarea from './pages/NuevaTarea'
+import Recetas from './pages/Recetas'
+import RecetaDetalle from './pages/RecetaDetalle'
+import NuevaReceta from './pages/NuevaReceta'
 
 function CargandoApp() {
   return (
@@ -68,6 +77,42 @@ function App() {
         <Route
           path="/wishlist"
           element={<RutaProtegida><Wishlist /></RutaProtegida>}
+        />
+        <Route
+          path="/hogar"
+          element={<RutaProtegida><Hogar /></RutaProtegida>}
+        />
+        <Route
+          path="/focos"
+          element={<RutaProtegida><Focos /></RutaProtegida>}
+        />
+        <Route
+          path="/lista-super"
+          element={<RutaProtegida><ListaSuper /></RutaProtegida>}
+        />
+        <Route
+          path="/lista-super/:id"
+          element={<RutaProtegida><ListaDetalle /></RutaProtegida>}
+        />
+        <Route
+          path="/tareas"
+          element={<RutaProtegida><Tareas /></RutaProtegida>}
+        />
+        <Route
+          path="/nueva-tarea"
+          element={<RutaProtegida><NuevaTarea /></RutaProtegida>}
+        />
+        <Route
+          path="/recetas"
+          element={<RutaProtegida><Recetas /></RutaProtegida>}
+        />
+        <Route
+          path="/recetas/:id"
+          element={<RutaProtegida><RecetaDetalle /></RutaProtegida>}
+        />
+        <Route
+          path="/nueva-receta"
+          element={<RutaProtegida><NuevaReceta /></RutaProtegida>}
         />
         <Route
           path="*"

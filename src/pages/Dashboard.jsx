@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogOut, ArrowRight, PieChart, BarChart2 } from 'lucide-react'
+import { LogOut, ArrowRight, House, Lightbulb, Wallet } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
@@ -17,8 +17,8 @@ function formatMonto(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n)
 }
 
-function nombreDelMes() {
-  return new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+function fechaHoy() {
+  return new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 export default function Dashboard() {
@@ -42,7 +42,6 @@ export default function Dashboard() {
       supabase.from('perfiles').select('*'),
     ])
 
-    // Si el usuario no tiene perfil, crear uno automáticamente
     const tienePerfil = perfilesData?.some(p => p.id === user.id)
     if (!tienePerfil) {
       const nombreAuto = user.email.split('@')[0]
@@ -68,22 +67,19 @@ export default function Dashboard() {
     )
   }
 
-  // Cálculo de balance — solo gastos compartidos generan deuda
+  // ── Cálculos de balance ──────────────────────────────────────────────────
   const compartidos = gastos.filter(g => g.tipo === 'compartido' || !g.tipo)
 
-  // Lo que me deben: yo pagué, el otro debe su % del gasto
   const meDebenTotal = compartidos
     .filter(g => g.pagado_por === user.id)
     .reduce((a, g) => a + Number(g.monto) * (1 - (g.porcentaje_pagador ?? 50) / 100), 0)
 
-  // Lo que debo: el otro pagó, yo debo mi % del gasto
   const deboTotal = compartidos
     .filter(g => g.pagado_por !== user.id)
     .reduce((a, g) => a + Number(g.monto) * (1 - (g.porcentaje_pagador ?? 50) / 100), 0)
 
-  const balance = meDebenTotal - deboTotal  // positivo = me deben, negativo = debo
+  const balance = meDebenTotal - deboTotal
 
-  // Totales para el resumen (todos los gastos, incluyendo personales)
   const misPagos   = gastos.filter(g => g.pagado_por === user.id).reduce((a, g) => a + Number(g.monto), 0)
   const otrosPagos = gastos.filter(g => g.pagado_por !== user.id).reduce((a, g) => a + Number(g.monto), 0)
   const total      = misPagos + otrosPagos
@@ -92,13 +88,32 @@ export default function Dashboard() {
   const otroUsuario = perfiles.find(p => p.id !== user.id)
   const miNombre    = miPerfil?.nombre ?? user.email.split('@')[0]
 
+  // ── Texto del balance ────────────────────────────────────────────────────
+  let balanceTexto = ''
+  let balanceSubtexto = ''
+  if (total === 0) {
+    balanceTexto = 'Sin gastos este mes'
+    balanceSubtexto = 'Agrega el primero 🌿'
+  } else if (balance === 0) {
+    balanceTexto = '¡Están a mano! 🎉'
+    balanceSubtexto = `${gastos.length} gastos · ${formatMonto(total)} total`
+  } else if (balance > 0) {
+    balanceTexto = formatMonto(balance)
+    balanceSubtexto = `${otroUsuario ? otroUsuario.nombre + ' te debe' : 'Te deben'} · ${gastos.length} gastos`
+  } else {
+    balanceTexto = formatMonto(Math.abs(balance))
+    balanceSubtexto = `${otroUsuario ? 'Le debes a ' + otroUsuario.nombre : 'Debes'} · ${gastos.length} gastos`
+  }
+
+  const balanceColor = balance >= 0 ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'
+
   return (
-    <div className="min-h-screen bg-[#FAF7F4] pb-20">
+    <div className="min-h-screen bg-[#FAF7F4] pb-24">
 
       {/* Header */}
       <div className="bg-white border-b border-[#EDE8E3] px-5 pt-12 pb-4 flex items-center justify-between">
         <div>
-          <p className="text-xs text-[#8C7E75] capitalize">{nombreDelMes()}</p>
+          <p className="text-xs text-[#8C7E75] capitalize">{fechaHoy()}</p>
           <h1 className="text-lg font-bold text-[#2D2926]">{saludo()}, {miNombre} 👋</h1>
         </div>
         <button
@@ -111,50 +126,81 @@ export default function Dashboard() {
 
       <div className="px-4 pt-5 flex flex-col gap-4">
 
-        {/* Tarjeta de balance */}
-        <div className={`rounded-2xl p-5 text-white ${balance >= 0 ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'}`}>
-          <p className="text-sm opacity-80 mb-1">Balance del mes</p>
-          {total === 0 ? (
-            <p className="text-lg font-semibold">Sin gastos este mes 🪺</p>
-          ) : balance === 0 ? (
-            <p className="text-xl font-bold">¡Están a mano! 🎉</p>
-          ) : balance > 0 ? (
-            <>
-              <p className="text-2xl font-bold">{formatMonto(balance)}</p>
-              <p className="text-sm opacity-80 mt-1">
-                {otroUsuario ? `${otroUsuario.nombre} te debe` : 'Te deben'}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-2xl font-bold">{formatMonto(Math.abs(balance))}</p>
-              <p className="text-sm opacity-80 mt-1">
-                {otroUsuario ? `Le debes a ${otroUsuario.nombre}` : 'Debes'}
-              </p>
-            </>
+        {/* ── TARJETA FINANZAS (full width) ─────────────────────────────── */}
+        <button
+          onClick={() => navigate('/gastos')}
+          className={`${balanceColor} rounded-2xl p-5 text-white text-left w-full transition-opacity active:opacity-90`}
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="bg-white/20 rounded-xl p-2">
+              <Wallet size={20} className="text-white" strokeWidth={1.8} />
+            </div>
+            <div className="flex items-center gap-1 bg-white/20 rounded-full px-3 py-1">
+              <span className="text-xs font-medium">Finanzas</span>
+              <ArrowRight size={12} />
+            </div>
+          </div>
+          <p className="text-sm opacity-80 mb-0.5">Balance del mes</p>
+          <p className="text-2xl font-bold mb-1">{balanceTexto}</p>
+          <p className="text-sm opacity-75">{balanceSubtexto}</p>
+
+          {/* Barra de progreso mi gasto vs otro */}
+          {total > 0 && (
+            <div className="mt-4 flex flex-col gap-1.5">
+              <div className="flex justify-between text-xs opacity-80">
+                <span>{miNombre} · {formatMonto(misPagos)}</span>
+                <span>{otroUsuario?.nombre ?? '—'} · {formatMonto(otrosPagos)}</span>
+              </div>
+              <div className="h-1.5 bg-white/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-white/70 rounded-full transition-all"
+                  style={{ width: `${total > 0 ? (misPagos / total) * 100 : 50}%` }}
+                />
+              </div>
+            </div>
           )}
+        </button>
+
+        {/* ── MÓDULOS SECUNDARIOS (2 columnas) ─────────────────────────── */}
+        <div className="grid grid-cols-2 gap-3">
+
+          {/* Hogar */}
+          <button
+            onClick={() => navigate('/hogar')}
+            className="bg-white rounded-2xl border border-[#EDE8E3] p-4 text-left transition-colors active:bg-[#FAF7F4] flex flex-col gap-3"
+          >
+            <div className="bg-[#F0EBE3] rounded-xl p-2.5 w-fit">
+              <House size={20} className="text-[#D4845A]" strokeWidth={1.8} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#2D2926] leading-tight">Gestión del hogar</p>
+              <p className="text-[11px] text-[#8C7E75] mt-0.5 leading-snug">Tareas · Lista · Recetas</p>
+            </div>
+            <span className="text-[10px] font-medium text-[#D4845A] bg-[#FAF0EB] px-2 py-0.5 rounded-full w-fit">
+              Próximamente
+            </span>
+          </button>
+
+          {/* Focos */}
+          <button
+            onClick={() => navigate('/focos')}
+            className="bg-white rounded-2xl border border-[#EDE8E3] p-4 text-left transition-colors active:bg-[#FAF7F4] flex flex-col gap-3"
+          >
+            <div className="bg-[#FDF6E3] rounded-xl p-2.5 w-fit">
+              <Lightbulb size={20} className="text-[#C8A94A]" strokeWidth={1.8} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#2D2926] leading-tight">Focos inteligentes</p>
+              <p className="text-[11px] text-[#8C7E75] mt-0.5 leading-snug">Control Govee</p>
+            </div>
+            <span className="text-[10px] font-medium text-[#D4845A] bg-[#FAF0EB] px-2 py-0.5 rounded-full w-fit">
+              Próximamente
+            </span>
+          </button>
+
         </div>
 
-        {/* Resumen del mes */}
-        <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
-          <p className="text-sm font-semibold text-[#2D2926] mb-3">Este mes</p>
-          <div className="flex gap-3">
-            <div className="flex-1 bg-[#FAF7F4] rounded-xl p-3 text-center">
-              <p className="text-xs text-[#8C7E75] mb-1">{miNombre}</p>
-              <p className="text-base font-bold text-[#2D2926]">{formatMonto(misPagos)}</p>
-            </div>
-            <div className="flex-1 bg-[#FAF7F4] rounded-xl p-3 text-center">
-              <p className="text-xs text-[#8C7E75] mb-1">{otroUsuario?.nombre ?? '—'}</p>
-              <p className="text-base font-bold text-[#2D2926]">{formatMonto(otrosPagos)}</p>
-            </div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-[#EDE8E3] flex justify-between items-center">
-            <span className="text-xs text-[#8C7E75]">Total gastado</span>
-            <span className="text-sm font-bold text-[#2D2926]">{formatMonto(total)}</span>
-          </div>
-        </div>
-
-        {/* Últimos gastos */}
+        {/* ── ÚLTIMOS GASTOS ────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
           <div className="flex justify-between items-center mb-3">
             <p className="text-sm font-semibold text-[#2D2926]">Últimos gastos</p>
@@ -202,26 +248,6 @@ export default function Dashboard() {
               })}
             </div>
           )}
-        </div>
-
-        {/* Accesos rápidos */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => navigate('/graficas')}
-            className="flex-1 bg-white rounded-2xl border border-[#EDE8E3] p-3 flex items-center gap-2"
-          >
-            <BarChart2 size={18} className="text-[#D4845A]" />
-            <span className="text-sm font-medium text-[#2D2926]">Gráficas</span>
-            <ArrowRight size={14} className="text-[#8C7E75] ml-auto" />
-          </button>
-          <button
-            onClick={() => navigate('/presupuestos')}
-            className="flex-1 bg-white rounded-2xl border border-[#EDE8E3] p-3 flex items-center gap-2"
-          >
-            <PieChart size={18} className="text-[#D4845A]" />
-            <span className="text-sm font-medium text-[#2D2926]">Límites</span>
-            <ArrowRight size={14} className="text-[#8C7E75] ml-auto" />
-          </button>
         </div>
 
       </div>
