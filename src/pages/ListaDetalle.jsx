@@ -12,6 +12,12 @@ const ORDEN_CATS = [
   'abarrotes', 'bebidas', 'limpieza', 'congelados', 'salud', 'otros',
 ]
 
+function categoriaNormalizada(cat) {
+  const c = cat && typeof cat === 'string' ? cat.trim() : ''
+  if (ORDEN_CATS.includes(c)) return c
+  return 'otros'
+}
+
 export default function ListaDetalle() {
   const { id } = useParams()
   const { user } = useAuth()
@@ -24,6 +30,7 @@ export default function ListaDetalle() {
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [nuevaCat, setNuevaCat]     = useState('otros')
   const [agregando, setAgregando]   = useState(false)
+  const [errorAgregar, setErrorAgregar] = useState('')
   const [modoCompra, setModoCompra] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
 
@@ -34,7 +41,7 @@ export default function ListaDetalle() {
   async function cargarDetalle() {
     const [{ data: listaData }, { data: itemsData }] = await Promise.all([
       supabase.from('listas_super').select('*').eq('id', id).single(),
-      supabase.from('items_lista').select('*').eq('lista_id', id).order('created_at'),
+      supabase.from('items_lista').select('*').eq('lista_id', id).order('created_at', { ascending: true }),
     ])
     if (!listaData) { navigate('/lista-super'); return }
     setLista(listaData)
@@ -44,18 +51,35 @@ export default function ListaDetalle() {
 
   async function agregarItem(e) {
     e?.preventDefault()
-    if (!nuevoNombre.trim() || agregando || lista?.completada) return
+    if (!nuevoNombre.trim() || agregando || lista?.completada || !id) return
     setAgregando(true)
-    const { data, error } = await supabase
+    setErrorAgregar('')
+    const nombre = nuevoNombre.trim()
+    const { data: inserted, error } = await supabase
       .from('items_lista')
-      .insert({ lista_id: id, nombre: nuevoNombre.trim(), categoria: nuevaCat, checked: false })
+      .insert({ lista_id: id, nombre, categoria: nuevaCat, checked: false })
       .select()
-      .single()
-    if (!error && data) {
-      setItems(prev => [...prev, data])
-      setNuevoNombre('')
-      inputRef.current?.focus()
+
+    if (error) {
+      setErrorAgregar(error.message || 'No se pudo agregar el ítem')
+      setAgregando(false)
+      return
     }
+
+    const row = inserted?.[0]
+    if (row) {
+      setItems(prev => [...prev, row])
+    } else {
+      // Insert ok pero sin filas devueltas (p. ej. RLS en RETURNING): recargar
+      const { data: itemsData } = await supabase
+        .from('items_lista')
+        .select('*')
+        .eq('lista_id', id)
+        .order('created_at', { ascending: true })
+      setItems(itemsData ?? [])
+    }
+    setNuevoNombre('')
+    inputRef.current?.focus()
     setAgregando(false)
   }
 
@@ -98,9 +122,9 @@ export default function ListaDetalle() {
     )
   }
 
-  // Agrupar ítems por categoría en el orden definido
+  // Agrupar ítems por categoría (valores desconocidos van a "otros" para que siempre se listen)
   const agrupados = ORDEN_CATS.reduce((acc, cat) => {
-    const catItems = items.filter(i => (i.categoria || 'otros') === cat)
+    const catItems = items.filter(i => categoriaNormalizada(i.categoria) === cat)
     if (catItems.length > 0) acc[cat] = catItems
     return acc
   }, {})
@@ -165,12 +189,20 @@ export default function ListaDetalle() {
         {/* ── Agregar ítem ──────────────────────────────────────────────── */}
         {!lista.completada && (
           <form onSubmit={agregarItem} className="bg-white rounded-2xl border border-[#EDE8E3] p-4 flex flex-col gap-3">
+            {errorAgregar && (
+              <p className="text-xs text-[#C0614A] bg-[#FFF0EE] border border-[#C0614A]/20 rounded-lg px-3 py-2">
+                {errorAgregar}
+              </p>
+            )}
             <div className="flex gap-2">
               <input
                 ref={inputRef}
                 type="text"
                 value={nuevoNombre}
-                onChange={e => setNuevoNombre(e.target.value)}
+                onChange={e => {
+                  setNuevoNombre(e.target.value)
+                  if (errorAgregar) setErrorAgregar('')
+                }}
                 placeholder="Agregar ítem..."
                 className="flex-1 bg-[#FAF7F4] border border-[#EDE8E3] rounded-xl px-3 py-2.5 text-sm text-[#2D2926] placeholder-[#8C7E75] outline-none focus:border-[#D4845A]"
               />
