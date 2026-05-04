@@ -21,6 +21,10 @@ export default function BottomNav() {
 
   function handlePlus() {
     if (pathname.startsWith('/lista-super'))                              navigate('/lista-super?nueva=true')
+    else if (pathname.startsWith('/wishlist')) {
+      if (pathname === '/wishlist') navigate('/wishlist?nueva=true')
+      else navigate(`${pathname}?agregar=true`)
+    }
     else if (pathname.startsWith('/tareas') || pathname === '/nueva-tarea')   navigate('/nueva-tarea')
     else if (pathname.startsWith('/recetas') || pathname === '/nueva-receta') navigate('/nueva-receta')
     else if (hogarActivo)                                                navigate('/hogar')

@@ -1,89 +1,69 @@
 import { useState, useEffect } from 'react'
-import { Plus, Check, Trash2, X } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Heart, Trash2, X, ChevronDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import BottomNav from '../components/BottomNav'
 
-const PRIORIDADES = [
-  { value: 'alta',  label: 'Alta',  emoji: '🔴', color: 'text-[#C0614A]', bg: 'bg-[#FDF0EE]', border: 'border-[#C0614A]/20' },
-  { value: 'media', label: 'Media', emoji: '🟡', color: 'text-[#D4845A]', bg: 'bg-[#FDF4EF]', border: 'border-[#D4845A]/20' },
-  { value: 'baja',  label: 'Baja',  emoji: '🟢', color: 'text-[#8BAF8D]', bg: 'bg-[#F0F5F0]', border: 'border-[#8BAF8D]/20' },
-]
-
-function getPrioridad(value) {
-  return PRIORIDADES.find(p => p.value === value) ?? PRIORIDADES[1]
-}
-
-function formatMonto(n) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n)
-}
-
 export default function Wishlist() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [items, setItems]           = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [mostrarForm, setMostrarForm] = useState(false)
-  const [guardando, setGuardando]   = useState(false)
+  const [listas, setListas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [mostrarModal, setMostrarModal] = useState(false)
+  const [creando, setCreando] = useState(false)
+  const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
 
   // Formulario
-  const [nombre, setNombre]             = useState('')
-  const [descripcion, setDescripcion]   = useState('')
-  const [precio, setPrecio]             = useState('')
-  const [prioridad, setPrioridad]       = useState('media')
+  const [titulo, setTitulo] = useState('')
 
   useEffect(() => {
-    if (user) cargarItems()
+    if (user) cargarListas()
   }, [user])
 
-  async function cargarItems() {
+  useEffect(() => {
+    if (searchParams.get('nueva') === 'true') {
+      setMostrarModal(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
+  async function cargarListas() {
     const { data } = await supabase
-      .from('wishlist')
-      .select('*')
-      .order('comprado', { ascending: true })
+      .from('wishlists')
+      .select('*, wishlist_items(id, comprado)')
       .order('created_at', { ascending: false })
-    setItems(data ?? [])
+    setListas(data ?? [])
     setLoading(false)
   }
 
-  function resetForm() {
-    setNombre('')
-    setDescripcion('')
-    setPrecio('')
-    setPrioridad('media')
-    setMostrarForm(false)
+  function resetModal() {
+    setTitulo('')
+    setMostrarModal(false)
   }
 
-  async function guardar() {
-    if (!nombre.trim()) return
-    setGuardando(true)
+  async function crearLista() {
+    if (!titulo.trim() || creando) return
+    setCreando(true)
+    const { data, error } = await supabase
+      .from('wishlists')
+      .insert({ titulo: titulo.trim(), creado_por: user.id })
+      .select('*, wishlist_items(id, comprado)')
+      .single()
 
-    await supabase.from('wishlist').insert({
-      nombre: nombre.trim(),
-      descripcion: descripcion.trim() || null,
-      precio_estimado: precio ? Number(precio) : null,
-      prioridad,
-      agregado_por: user.id,
-    })
-
-    await cargarItems()
-    resetForm()
-    setGuardando(false)
+    if (!error && data) {
+      setTitulo('')
+      setMostrarModal(false)
+      navigate(`/wishlist/${data.id}`)
+    }
+    setCreando(false)
   }
 
-  async function marcarComprado(id, comprado) {
-    await supabase.from('wishlist').update({
-      comprado: !comprado,
-      comprado_en: !comprado ? new Date().toISOString().split('T')[0] : null,
-    }).eq('id', id)
-    setItems(prev => prev.map(i =>
-      i.id === id ? { ...i, comprado: !comprado } : i
-    ).sort((a, b) => a.comprado - b.comprado))
-  }
-
-  async function eliminar(id) {
-    await supabase.from('wishlist').delete().eq('id', id)
-    setItems(prev => prev.filter(i => i.id !== id))
+  async function eliminarLista(id) {
+    setListas(prev => prev.filter(l => l.id !== id))
+    await supabase.from('wishlists').delete().eq('id', id)
   }
 
   if (loading) {
@@ -94,8 +74,8 @@ export default function Wishlist() {
     )
   }
 
-  const pendientes = items.filter(i => !i.comprado)
-  const comprados  = items.filter(i => i.comprado)
+  const activas = listas.filter(l => !l.archivada)
+  const archivadas = listas.filter(l => l.archivada)
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] pb-24 flex flex-col">
@@ -104,11 +84,11 @@ export default function Wishlist() {
       <div className="bg-white border-b border-[#EDE8E3] px-5 pt-12 pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold text-[#2D2926]">Lista de deseos 🛋️</h1>
-            <p className="text-xs text-[#8C7E75]">Cosas que quieren para el hogar</p>
+            <h1 className="text-lg font-bold text-[#2D2926]">Wishlists 🛋️</h1>
+            <p className="text-xs text-[#8C7E75]">Crea listas con títulos y agrega cosas que quieren comprar</p>
           </div>
           <button
-            onClick={() => setMostrarForm(true)}
+            onClick={() => setMostrarModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#D4845A] text-white text-sm font-medium"
           >
             <Plus size={16} strokeWidth={2.5} /> Agregar
@@ -119,182 +99,151 @@ export default function Wishlist() {
       <div className="px-4 pt-5 flex flex-col gap-3">
 
         {/* Estado vacío */}
-        {items.length === 0 && (
+        {listas.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20">
             <p className="text-5xl mb-3">🛒</p>
-            <p className="text-sm font-medium text-[#2D2926]">Lista vacía por ahora</p>
-            <p className="text-xs text-[#8C7E75] mt-1">Agrega cosas que quieran comprar para el hogar</p>
+            <p className="text-sm font-medium text-[#2D2926]">No hay wishlists por ahora</p>
+            <p className="text-xs text-[#8C7E75] mt-1">Crea una lista y agrega productos con link o descripción</p>
             <button
-              onClick={() => setMostrarForm(true)}
+              onClick={() => setMostrarModal(true)}
               className="mt-4 px-4 py-2 rounded-xl bg-[#D4845A] text-white text-sm font-medium"
             >
-              + Agregar el primero
+              + Crear la primera
             </button>
           </div>
         )}
 
-        {/* Pendientes */}
-        {pendientes.length > 0 && (
-          <>
-            <p className="text-xs font-semibold text-[#8C7E75] uppercase tracking-wide px-1">
-              Pendientes · {pendientes.length}
-            </p>
-            {pendientes.map(item => {
-              const p = getPrioridad(item.prioridad)
-              return (
-                <div key={item.id} className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
-                  <div className="flex items-start gap-3">
-                    <button
-                      onClick={() => marcarComprado(item.id, item.comprado)}
-                      className="w-6 h-6 rounded-full border-2 border-[#EDE8E3] flex items-center justify-center flex-shrink-0 mt-0.5 hover:border-[#8BAF8D] transition-colors"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-[#2D2926]">{item.nombre}</p>
-                      {item.descripcion && (
-                        <p className="text-xs text-[#8C7E75] mt-0.5">{item.descripcion}</p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${p.color} ${p.bg} ${p.border}`}>
-                          {p.emoji} {p.label}
-                        </span>
-                        {item.precio_estimado && (
-                          <span className="text-xs text-[#8C7E75]">~{formatMonto(item.precio_estimado)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => eliminar(item.id)}
-                      className="p-1.5 rounded-lg text-[#8C7E75] hover:bg-[#FDF0EE] hover:text-[#C0614A] transition-colors flex-shrink-0"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </>
-        )}
+        {/* Listas activas */}
+        {activas.length > 0 && activas.map(lista => (
+          <WishlistCard
+            key={lista.id}
+            lista={lista}
+            onTap={() => navigate(`/wishlist/${lista.id}`)}
+            onDelete={() => eliminarLista(lista.id)}
+          />
+        ))}
 
-        {/* Comprados */}
-        {comprados.length > 0 && (
-          <>
-            <p className="text-xs font-semibold text-[#8C7E75] uppercase tracking-wide px-1 mt-2">
-              Comprado · {comprados.length}
-            </p>
-            {comprados.map(item => (
-              <div key={item.id} className="bg-white rounded-2xl border border-[#EDE8E3] p-4 opacity-60">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => marcarComprado(item.id, item.comprado)}
-                    className="w-6 h-6 rounded-full bg-[#8BAF8D] flex items-center justify-center flex-shrink-0"
-                  >
-                    <Check size={13} strokeWidth={3} className="text-white" />
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#2D2926] line-through">{item.nombre}</p>
-                    {item.precio_estimado && (
-                      <p className="text-xs text-[#8C7E75]">{formatMonto(item.precio_estimado)}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => eliminar(item.id)}
-                    className="p-1.5 rounded-lg text-[#8C7E75] hover:bg-[#FDF0EE] hover:text-[#C0614A] transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
+        {/* Archivadas */}
+        {archivadas.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => setMostrarArchivadas(v => !v)}
+              className="flex items-center gap-2 text-xs font-semibold text-[#8C7E75] uppercase tracking-wider px-1 py-1 w-full"
+            >
+              <ChevronDown
+                size={14}
+                className={`transition-transform ${mostrarArchivadas ? 'rotate-180' : ''}`}
+              />
+              Archivadas ({archivadas.length})
+            </button>
+            {mostrarArchivadas && archivadas.map(lista => (
+              <WishlistCard
+                key={lista.id}
+                lista={lista}
+                archivada
+                onTap={() => navigate(`/wishlist/${lista.id}`)}
+                onDelete={() => eliminarLista(lista.id)}
+              />
             ))}
-          </>
+          </div>
         )}
       </div>
 
-      {/* Modal / Bottom sheet agregar */}
-      {mostrarForm && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end">
-          <div className="absolute inset-0 bg-black/30" onClick={resetForm} />
-          <div className="relative bg-white rounded-t-3xl p-5 flex flex-col gap-4 pb-24 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <p className="text-base font-bold text-[#2D2926]">Nuevo deseo</p>
-              <button onClick={resetForm} className="p-1.5 rounded-xl text-[#8C7E75]">
+      {/* Modal nueva wishlist */}
+      {mostrarModal && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-end"
+          onClick={resetModal}
+        >
+          <div
+            className="bg-white w-full rounded-t-2xl p-5 pb-10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-5">
+              <p className="text-base font-bold text-[#2D2926]">Nueva wishlist</p>
+              <button
+                onClick={resetModal}
+                className="p-1.5 rounded-xl text-[#8C7E75] hover:bg-[#FAF7F4]"
+              >
                 <X size={18} />
               </button>
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-[#2D2926]">¿Qué quieren comprar?</label>
-              <input
-                type="text"
-                value={nombre}
-                onChange={e => setNombre(e.target.value)}
-                placeholder="Ej: Sofá nuevo para la sala"
-                autoFocus
-                maxLength={80}
-                className="px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm placeholder-[#8C7E75] focus:outline-none focus:border-[#D4845A]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-[#2D2926]">
-                Notas <span className="text-[#8C7E75] font-normal">(opcional)</span>
-              </label>
-              <input
-                type="text"
-                value={descripcion}
-                onChange={e => setDescripcion(e.target.value)}
-                placeholder="Ej: Color gris, tamaño 3 personas"
-                maxLength={120}
-                className="px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm placeholder-[#8C7E75] focus:outline-none focus:border-[#D4845A]"
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <div className="flex-1 flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-[#2D2926]">
-                  Precio aprox. <span className="text-[#8C7E75] font-normal">(opcional)</span>
-                </label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={precio}
-                  onChange={e => setPrecio(e.target.value)}
-                  placeholder="0"
-                  className="px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A]"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-[#2D2926]">Prioridad</label>
-              <div className="flex gap-2">
-                {PRIORIDADES.map(p => (
-                  <button
-                    key={p.value}
-                    onClick={() => setPrioridad(p.value)}
-                    className={`flex-1 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                      prioridad === p.value
-                        ? `${p.color} ${p.bg} ${p.border}`
-                        : 'border-[#EDE8E3] bg-[#FAF7F4] text-[#8C7E75]'
-                    }`}
-                  >
-                    {p.emoji} {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+            <input
+              autoFocus
+              type="text"
+              value={titulo}
+              onChange={e => setTitulo(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && crearLista()}
+              placeholder="Ej. Sala, Cocina, Viajes, Gadgets..."
+              className="w-full bg-[#FAF7F4] border border-[#EDE8E3] rounded-xl px-4 py-3 text-sm text-[#2D2926] placeholder-[#8C7E75] outline-none focus:border-[#D4845A] mb-4"
+            />
             <button
-              onClick={guardar}
-              disabled={guardando || !nombre.trim()}
-              className="w-full py-3.5 rounded-2xl bg-[#D4845A] text-white font-bold text-sm disabled:opacity-50 active:scale-[0.98] transition-all"
+              onClick={crearLista}
+              disabled={!titulo.trim() || creando}
+              className="w-full bg-[#D4845A] text-white font-semibold py-3.5 rounded-xl text-sm disabled:opacity-50 transition-opacity"
             >
-              {guardando ? 'Guardando...' : 'Agregar a la lista'}
+              {creando ? 'Creando...' : 'Crear y abrir wishlist'}
             </button>
           </div>
         </div>
       )}
 
       <BottomNav />
+    </div>
+  )
+}
+
+function WishlistCard({ lista, archivada, onTap, onDelete }) {
+  const [expandido, setExpandido] = useState(false)
+  const items = lista.wishlist_items ?? []
+  const pendientes = items.filter(i => !i.comprado).length
+  const total = items.length
+
+  return (
+    <div className="bg-white rounded-2xl border border-[#EDE8E3] overflow-hidden">
+      <div className="p-4 flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${archivada ? 'bg-[#F4F1EE]' : 'bg-[#FAF0EB]'}`}>
+          <Heart size={18} className={`${archivada ? 'text-[#8C7E75]' : 'text-[#D4845A]'}`} strokeWidth={1.8} />
+        </div>
+
+        <button className="flex-1 text-left min-w-0" onClick={onTap}>
+          <p className={`text-sm font-semibold truncate ${archivada ? 'text-[#8C7E75]' : 'text-[#2D2926]'}`}>
+            {lista.titulo}
+          </p>
+          <p className="text-xs text-[#8C7E75] mt-0.5">
+            {total === 0
+              ? 'Wishlist vacía'
+              : archivada
+                ? `${total} ítem${total !== 1 ? 's' : ''}`
+                : `${pendientes} pendiente${pendientes !== 1 ? 's' : ''} de ${total}`
+            }
+          </p>
+        </button>
+
+        <button
+          onClick={() => setExpandido(v => !v)}
+          className="p-2 rounded-xl text-[#8C7E75] hover:bg-[#FAF7F4] transition-colors flex-shrink-0"
+        >
+          <ChevronDown size={16} className={`transition-transform ${expandido ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {expandido && (
+        <div className="border-t border-[#EDE8E3] px-4 py-3 flex gap-2">
+          <button
+            onClick={onTap}
+            className="flex-1 bg-[#FAF7F4] text-[#2D2926] text-sm font-medium py-2.5 rounded-xl"
+          >
+            Abrir wishlist
+          </button>
+          <button
+            onClick={onDelete}
+            className="flex items-center justify-center gap-1.5 bg-[#FFF0EE] text-[#C0614A] text-sm font-medium py-2.5 px-4 rounded-xl"
+          >
+            <Trash2 size={14} /> Eliminar
+          </button>
+        </div>
+      )}
     </div>
   )
 }

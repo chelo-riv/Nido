@@ -75,11 +75,21 @@ create table liquidaciones (
   created_at timestamptz default now()
 );
 
--- Wishlist del hogar
-create table wishlist (
+-- Wishlists (varias listas con título) + ítems
+create table if not exists wishlists (
   id uuid default gen_random_uuid() primary key,
+  titulo text not null,
+  creado_por uuid references auth.users on delete cascade not null,
+  archivada boolean not null default false,
+  created_at timestamptz default now()
+);
+
+create table if not exists wishlist_items (
+  id uuid default gen_random_uuid() primary key,
+  wishlist_id uuid references wishlists(id) on delete cascade not null,
   nombre text not null,
   descripcion text,
+  link text,
   precio_estimado numeric(10,2),
   prioridad text not null default 'media',
   agregado_por uuid references auth.users not null,
@@ -114,7 +124,8 @@ alter table perfiles enable row level security;
 alter table gastos enable row level security;
 alter table presupuestos enable row level security;
 alter table liquidaciones enable row level security;
-alter table wishlist enable row level security;
+alter table wishlists enable row level security;
+alter table wishlist_items enable row level security;
 alter table listas_super enable row level security;
 alter table items_lista enable row level security;
 
@@ -122,13 +133,19 @@ create policy "usuarios autenticados" on perfiles for all using (auth.role() = '
 create policy "usuarios autenticados" on gastos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on presupuestos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on liquidaciones for all using (auth.role() = 'authenticated');
-create policy "usuarios autenticados" on wishlist for all using (auth.role() = 'authenticated');
+
+drop policy if exists "usuarios autenticados" on wishlists;
+drop policy if exists "usuarios autenticados" on wishlist_items;
+create policy "usuarios autenticados" on wishlists for all to authenticated using (true) with check (true);
+create policy "usuarios autenticados" on wishlist_items for all to authenticated using (true) with check (true);
 
 drop policy if exists "usuarios autenticados" on listas_super;
 drop policy if exists "usuarios autenticados" on items_lista;
 create policy "usuarios autenticados" on listas_super for all to authenticated using (true) with check (true);
 create policy "usuarios autenticados" on items_lista for all to authenticated using (true) with check (true);
 ```
+
+**Wishlists — proyectos que ya tenían la tabla `wishlist` (modelo antiguo):** la app usa `wishlists` y `wishlist_items`. Crea esas tablas y políticas con el bloque de arriba (o solo el fragmento `create table if not exists` + `alter` + `create policy` si el resto ya existe). Los datos viejos en `wishlist` no se migran solos; puedes copiarlos en el Table Editor o dejar la tabla sin usar.
 
 **Proyectos ya creados:** en el SQL Editor de Supabase, añade la columna opcional de nota en liquidaciones:
 
@@ -196,7 +213,8 @@ src/
 │   ├── Balances.jsx         # Balance neto + desglose + liquidaciones (dirección, cantidad, fecha, nota)
 │   ├── Presupuestos.jsx     # Límites por categoría con barra de progreso
 │   ├── Graficas.jsx         # Pie chart por categoría + barras por semana
-│   └── Wishlist.jsx         # Lista de deseos del hogar con prioridades
+│   ├── Wishlist.jsx         # Índice de wishlists (crear / abrir / archivadas)
+│   └── WishlistDetalle.jsx  # Ítems de una wishlist (link, notas, prioridad, comprado)
 └── App.jsx                  # Router principal + RutaProtegida HOC
 ```
 
@@ -250,8 +268,8 @@ const balanceNeto = balanceBruto - pagosRecibidos + pagosRealizados
 ### `presupuestos`
 Una fila por categoría (`UNIQUE`). El progreso se calcula en el frontend comparando el total de gastos del mes en esa categoría contra `monto_limite`.
 
-### `wishlist`
-Lista compartida entre los dos usuarios. `comprado = true` mueve el item a la sección de completados (con tachado).
+### `wishlists` y `wishlist_items`
+Varias wishlists con `titulo`; cada ítem tiene `nombre`, `descripcion` y `link` opcionales, `precio_estimado` y `prioridad`. `comprado = true` mueve el ítem a completados. `archivada` en la lista agrupa wishlists terminadas sin borrarlas.
 
 ---
 

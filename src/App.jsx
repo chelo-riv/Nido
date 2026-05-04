@@ -9,6 +9,7 @@ import Balances from './pages/Balances'
 import Presupuestos from './pages/Presupuestos'
 import Graficas from './pages/Graficas'
 import Wishlist from './pages/Wishlist'
+import WishlistDetalle from './pages/WishlistDetalle'
 import Hogar from './pages/Hogar'
 import Focos from './pages/Focos'
 import ListaSuper from './pages/ListaSuper'
@@ -77,6 +78,10 @@ function App() {
         <Route
           path="/wishlist"
           element={<RutaProtegida><Wishlist /></RutaProtegida>}
+        />
+        <Route
+          path="/wishlist/:id"
+          element={<RutaProtegida><WishlistDetalle /></RutaProtegida>}
         />
         <Route
           path="/hogar"
