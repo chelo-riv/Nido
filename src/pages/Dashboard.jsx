@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogOut, ArrowRight, House, Lightbulb, Wallet } from 'lucide-react'
+import { LogOut, ArrowRight, House, Lightbulb, Wallet, Scale, PiggyBank, LineChart, Heart } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
@@ -160,6 +160,26 @@ export default function Dashboard() {
             </div>
           )}
         </button>
+
+        {/* Atajos finanzas (rutas sin enlace en la barra inferior) */}
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+          {[
+            { to: '/balances', label: 'Balances', Icon: Scale },
+            { to: '/presupuestos', label: 'Presupuestos', Icon: PiggyBank },
+            { to: '/graficas', label: 'Gráficas', Icon: LineChart },
+            { to: '/wishlist', label: 'Wishlists', Icon: Heart },
+          ].map(({ to, label, Icon }) => (
+            <button
+              key={to}
+              type="button"
+              onClick={() => navigate(to)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#EDE8E3] bg-white text-xs font-semibold text-[#2D2926] active:bg-[#FAF7F4]"
+            >
+              <Icon size={14} className="text-[#8C7E75]" strokeWidth={2} />
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* ── MÓDULOS SECUNDARIOS (2 columnas) ─────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">

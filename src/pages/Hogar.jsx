@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ClipboardList, ShoppingCart, ChefHat, ArrowRight } from 'lucide-react'
+import { ArrowLeft, ClipboardList, ShoppingCart, ChefHat, ArrowRight, Heart } from 'lucide-react'
 import BottomNav from '../components/BottomNav'
 
 const modulosActivos = [
@@ -27,6 +27,14 @@ const modulosActivos = [
     iconColor: 'text-[#C0875A]',
     ruta: '/recetas',
   },
+  {
+    icono: Heart,
+    titulo: 'Wishlists',
+    desc: 'Listas con título: cosas que quieren comprar, con link o notas.',
+    color: 'bg-[#FAF0EB]',
+    iconColor: 'text-[#D4845A]',
+    ruta: '/wishlist',
+  },
 ]
 
 
@@ -46,7 +54,7 @@ export default function Hogar() {
         </button>
         <div>
           <h1 className="text-lg font-bold text-[#2D2926]">Gestión del hogar</h1>
-          <p className="text-xs text-[#8C7E75]">Tareas · Lista del súper · Recetas</p>
+          <p className="text-xs text-[#8C7E75]">Tareas · Lista del súper · Recetas · Wishlists</p>
         </div>
       </div>
 
