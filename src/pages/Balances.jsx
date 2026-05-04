@@ -18,6 +18,16 @@ function nombreDelMes() {
   return new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
 }
 
+function fechaLocalHoy() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function ymPantallaActual() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export default function Balances() {
   const { user } = useAuth()
 
@@ -27,8 +37,13 @@ export default function Balances() {
   const [loading, setLoading]           = useState(true)
   const [mostrarLiquidar, setMostrarLiquidar] = useState(false)
   const [montoLiquidar, setMontoLiquidar] = useState('')
+  // recibi = el otro me transfirió | pague = yo le transferí al otro
+  const [direccionTransferencia, setDireccionTransferencia] = useState('recibi')
+  const [fechaLiquidacion, setFechaLiquidacion] = useState(() => fechaLocalHoy())
+  const [notaLiquidacion, setNotaLiquidacion] = useState('')
   const [guardando, setGuardando]       = useState(false)
   const [mostrarDesglose, setMostrarDesglose] = useState(false)
+  const [avisoExito, setAvisoExito]     = useState('')
 
   useEffect(() => {
     if (user) cargarDatos()
@@ -52,24 +67,36 @@ export default function Balances() {
   }
 
   async function liquidar() {
-    if (!montoLiquidar || Number(montoLiquidar) <= 0) return
+    if (!montoLiquidar || Number(montoLiquidar) <= 0 || !otroUsuario?.id) return
+    if (!fechaLiquidacion || fechaLiquidacion.length < 10) return
 
     setGuardando(true)
 
-    // Quien debe paga a quien se le debe
-    const pagadoPor = balance < 0 ? user.id : otroUsuario?.id
-    const pagadoA   = balance < 0 ? otroUsuario?.id : user.id
+    const pagadoPor = direccionTransferencia === 'recibi' ? otroUsuario.id : user.id
+    const pagadoA   = direccionTransferencia === 'recibi' ? user.id : otroUsuario.id
+    const nota = notaLiquidacion.trim() || null
 
-    const { error } = await supabase.from('liquidaciones').insert({
+    const payload = {
       monto: Number(montoLiquidar),
       pagado_por: pagadoPor,
       pagado_a: pagadoA,
-      fecha: new Date().toISOString().split('T')[0],
-    })
+      fecha: fechaLiquidacion,
+    }
+    if (nota) payload.nota = nota
+
+    const { error } = await supabase.from('liquidaciones').insert(payload)
 
     if (!error) {
+      const guardadoFueraDelMesVisible = fechaLiquidacion.slice(0, 7) !== ymPantallaActual()
       setMontoLiquidar('')
+      setNotaLiquidacion('')
+      setFechaLiquidacion(fechaLocalHoy())
       setMostrarLiquidar(false)
+      setDireccionTransferencia('recibi')
+      if (guardadoFueraDelMesVisible) {
+        setAvisoExito('Pago guardado. La fecha es de otro mes: no aparecerá en la lista de este mes.')
+        window.setTimeout(() => setAvisoExito(''), 7000)
+      }
       await cargarDatos()
     }
 
@@ -112,10 +139,28 @@ export default function Balances() {
 
   const balance = balanceBruto - pagosRecibidos + pagosRealizados
 
-  // Pre-llenar el monto de liquidación con el balance pendiente
-  function abrirLiquidar() {
-    setMontoLiquidar(Math.abs(balance).toFixed(0))
+  function abrirLiquidarDesdeSaldo() {
+    if (balance > 0) setDireccionTransferencia('recibi')
+    else if (balance < 0) setDireccionTransferencia('pague')
+    setMontoLiquidar(Math.abs(balance) > 0.5 ? String(Math.round(Math.abs(balance))) : '')
+    setFechaLiquidacion(fechaLocalHoy())
+    setNotaLiquidacion('')
     setMostrarLiquidar(true)
+  }
+
+  function abrirLiquidarManual() {
+    setDireccionTransferencia('recibi')
+    setMontoLiquidar('')
+    setFechaLiquidacion(fechaLocalHoy())
+    setNotaLiquidacion('')
+    setMostrarLiquidar(true)
+  }
+
+  function cerrarFormLiquidar() {
+    setMostrarLiquidar(false)
+    setDireccionTransferencia('recibi')
+    setFechaLiquidacion(fechaLocalHoy())
+    setNotaLiquidacion('')
   }
 
   const hayBalance = Math.abs(balance) > 0.5
@@ -133,6 +178,11 @@ export default function Balances() {
       </div>
 
       <div className="px-4 pt-5 flex flex-col gap-4">
+        {avisoExito && (
+          <div className="rounded-xl border border-[#D4845A]/40 bg-[#FDF6F3] px-3 py-2 text-xs text-[#2D2926]">
+            {avisoExito}
+          </div>
+        )}
 
         {/* Tarjeta de balance principal */}
         <div className={`rounded-2xl p-6 text-white ${meDeben ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'}`}>
@@ -141,6 +191,15 @@ export default function Balances() {
               <p className="text-3xl mb-2">🎉</p>
               <p className="text-xl font-bold">¡Están a mano!</p>
               <p className="text-sm opacity-80 mt-1">No hay deuda pendiente este mes</p>
+              {otroUsuario && (
+                <button
+                  type="button"
+                  onClick={abrirLiquidarManual}
+                  className="mt-4 w-full py-2.5 rounded-xl bg-white/20 border border-white/30 text-white text-sm font-semibold backdrop-blur-sm active:scale-[0.98] transition-all"
+                >
+                  Anotar transferencia igualmente
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -156,7 +215,7 @@ export default function Balances() {
 
               {/* Botón liquidar */}
               <button
-                onClick={abrirLiquidar}
+                onClick={abrirLiquidarDesdeSaldo}
                 className="mt-4 w-full py-2.5 rounded-xl bg-white/20 border border-white/30 text-white text-sm font-semibold backdrop-blur-sm active:scale-[0.98] transition-all"
               >
                 Registrar pago
@@ -166,23 +225,60 @@ export default function Balances() {
         </div>
 
         {/* Formulario de liquidación */}
-        {mostrarLiquidar && (
+        {mostrarLiquidar && otroUsuario && (
           <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
-            <p className="text-sm font-semibold text-[#2D2926] mb-3">
-              {meDeben
-                ? `¿Cuánto te pagó ${otroUsuario?.nombre ?? 'tu pareja'}?`
-                : `¿Cuánto le pagaste a ${otroUsuario?.nombre ?? 'tu pareja'}?`}
+            <p className="text-sm font-semibold text-[#2D2926] mb-2">¿Quién transfirió?</p>
+            <div className="flex gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setDireccionTransferencia('recibi')}
+                className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-semibold border transition-all ${
+                  direccionTransferencia === 'recibi'
+                    ? 'bg-[#2D2926] text-white border-[#2D2926]'
+                    : 'bg-[#FAF7F4] text-[#8C7E75] border-[#EDE8E3]'
+                }`}
+              >
+                {otroUsuario.nombre} me pagó
+              </button>
+              <button
+                type="button"
+                onClick={() => setDireccionTransferencia('pague')}
+                className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-semibold border transition-all ${
+                  direccionTransferencia === 'pague'
+                    ? 'bg-[#2D2926] text-white border-[#2D2926]'
+                    : 'bg-[#FAF7F4] text-[#8C7E75] border-[#EDE8E3]'
+                }`}
+              >
+                Yo le pagué a {otroUsuario.nombre}
+              </button>
+            </div>
+
+            <p className="text-sm font-semibold text-[#2D2926] mb-1">Cantidad</p>
+            <p className="text-[11px] text-[#8C7E75] mb-2">
+              Monto de la transferencia (puede ser parcial o distinto al saldo mostrado arriba).
             </p>
+            {hayBalance && (
+              <button
+                type="button"
+                onClick={() => setMontoLiquidar(String(Math.round(Math.abs(balance))))}
+                className="mb-2 text-xs font-semibold text-[#D4845A]"
+              >
+                Usar saldo pendiente ({formatMonto(Math.abs(balance))})
+              </button>
+            )}
             <div className="flex gap-2">
               <input
                 type="number"
                 inputMode="decimal"
+                min="0"
+                step="1"
                 value={montoLiquidar}
                 onChange={e => setMontoLiquidar(e.target.value)}
                 placeholder="0"
                 className="flex-1 px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-lg font-bold text-center focus:outline-none focus:border-[#D4845A]"
               />
               <button
+                type="button"
                 onClick={liquidar}
                 disabled={guardando}
                 className="px-4 py-3 rounded-xl bg-[#D4845A] text-white font-semibold flex items-center gap-1.5 disabled:opacity-60"
@@ -191,8 +287,43 @@ export default function Balances() {
                 {guardando ? '...' : 'Guardar'}
               </button>
             </div>
+
+            <div className="mt-4">
+              <label htmlFor="fecha-liquidacion" className="text-sm font-semibold text-[#2D2926] block mb-1">
+                Fecha del pago
+              </label>
+              <input
+                id="fecha-liquidacion"
+                type="date"
+                value={fechaLiquidacion}
+                onChange={e => setFechaLiquidacion(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A]"
+              />
+              {fechaLiquidacion.slice(0, 7) !== ymPantallaActual() && (
+                <p className="text-[11px] text-[#C0614A] mt-1.5">
+                  Este mes no es el que estás viendo arriba: el pago contará solo en el mes de esa fecha.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="nota-liquidacion" className="text-sm font-semibold text-[#2D2926] block mb-1">
+                Nota <span className="font-normal text-[#8C7E75]">(opcional)</span>
+              </label>
+              <input
+                id="nota-liquidacion"
+                type="text"
+                value={notaLiquidacion}
+                onChange={e => setNotaLiquidacion(e.target.value)}
+                placeholder="Ej. transfer SPEI, mitad del mes…"
+                maxLength={200}
+                className="w-full px-4 py-2.5 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A]"
+              />
+            </div>
+
             <button
-              onClick={() => setMostrarLiquidar(false)}
+              type="button"
+              onClick={cerrarFormLiquidar}
               className="mt-2 w-full text-xs text-[#8C7E75] py-1"
             >
               Cancelar
@@ -270,11 +401,16 @@ export default function Balances() {
                     <div className="w-8 h-8 rounded-xl bg-[#F0F5F0] flex items-center justify-center text-base flex-shrink-0">
                       💸
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-[#2D2926]">
                         {pagadorNombre} le pagó a {receptorNombre}
                       </p>
                       <p className="text-[11px] text-[#8C7E75]">{formatFecha(liq.fecha)}</p>
+                      {liq.nota && (
+                        <p className="text-[11px] text-[#8C7E75] mt-0.5 italic truncate" title={liq.nota}>
+                          {liq.nota}
+                        </p>
+                      )}
                     </div>
                     <p className="text-sm font-bold text-[#8BAF8D]">
                       {formatMonto(liq.monto)}
