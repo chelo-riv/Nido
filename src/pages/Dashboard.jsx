@@ -13,6 +13,17 @@ function saludo() {
   return 'Buenas noches'
 }
 
+// Mismo umbral que Balances: centavos/decimales de porcentajes no marcan deuda pendiente.
+const UMBRAL_BALANCE_MANO = 0.5
+
+function balanceCasiCubiertos(n) {
+  return Math.abs(n) <= UMBRAL_BALANCE_MANO
+}
+
+function saldoMostrarPesos(n) {
+  return Math.round(n)
+}
+
 function formatMonto(n) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n)
 }
@@ -100,25 +111,39 @@ export default function Dashboard() {
   const miPerfil    = perfiles.find(p => p.id === user.id)
   const otroUsuario = perfiles.find(p => p.id !== user.id)
   const miNombre    = miPerfil?.nombre ?? user.email.split('@')[0]
+  const otroNombre  = otroUsuario?.nombre ?? 'Tu pareja'
+  const nCompartidos = compartidos.length
+  const casiCubiertos = balanceCasiCubiertos(balance)
+  const hayPagosEsteMes = total > 0 || liquidaciones.length > 0
 
   // ── Texto del balance ────────────────────────────────────────────────────
   let balanceTexto = ''
   let balanceSubtexto = ''
-  if (total === 0) {
-    balanceTexto = 'Sin gastos este mes'
-    balanceSubtexto = 'Agrega el primero 🌿'
-  } else if (balance === 0) {
-    balanceTexto = '¡Están a mano! 🎉'
-    balanceSubtexto = `${gastos.length} gastos · ${formatMonto(total)} total`
-  } else if (balance > 0) {
-    balanceTexto = formatMonto(balance)
-    balanceSubtexto = `${otroUsuario ? otroUsuario.nombre + ' te debe' : 'Te deben'} · ${gastos.length} gastos`
+  if (!hayPagosEsteMes) {
+    balanceTexto = 'Sin movimiento este mes'
+    balanceSubtexto = 'Agrega gastos o anota pagos'
+  } else if (casiCubiertos) {
+    balanceTexto = '¡Están a mano!'
+    const partes = []
+    if (total > 0) partes.push(`${gastos.length} cargos · ${formatMonto(total)} en gastos`)
+    if (liquidaciones.length > 0) {
+      const p = liquidaciones.length
+      partes.push(`${p} pago${p === 1 ? '' : 's'} registrado${p === 1 ? '' : 's'}`)
+    }
+    balanceSubtexto = partes.join(' · ') || 'Sin deuda pendiente este mes'
+  } else if (balance > UMBRAL_BALANCE_MANO) {
+    balanceTexto = formatMonto(saldoMostrarPesos(balance))
+    balanceSubtexto = otroUsuario
+      ? `${otroNombre} te debe · saldo neto del mes (${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'})`
+      : `Te deben · ${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'}`
   } else {
-    balanceTexto = formatMonto(Math.abs(balance))
-    balanceSubtexto = `${otroUsuario ? 'Le debes a ' + otroUsuario.nombre : 'Debes'} · ${gastos.length} gastos`
+    balanceTexto = formatMonto(saldoMostrarPesos(Math.abs(balance)))
+    balanceSubtexto = otroUsuario
+      ? `Le debes a ${otroNombre} · saldo neto del mes (${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'})`
+      : `Debes · saldo neto del mes (${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'})`
   }
 
-  const balanceColor = balance >= 0 ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'
+  const balanceColor = casiCubiertos || balance > UMBRAL_BALANCE_MANO ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] pb-24">
@@ -157,12 +182,14 @@ export default function Dashboard() {
           <p className="text-2xl font-bold mb-1">{balanceTexto}</p>
           <p className="text-sm opacity-75">{balanceSubtexto}</p>
 
-          {/* Barra de progreso mi gasto vs otro */}
           {total > 0 && (
             <div className="mt-4 flex flex-col gap-1.5">
-              <div className="flex justify-between text-xs opacity-80">
+              <p className="text-[10px] opacity-75 leading-snug">
+                Quién pagó cada gasto del mes · el número grande arriba es el saldo neto (tras transferencias).
+              </p>
+              <div className="flex justify-between text-xs opacity-85">
                 <span>{miNombre} · {formatMonto(misPagos)}</span>
-                <span>{otroUsuario?.nombre ?? '—'} · {formatMonto(otrosPagos)}</span>
+                <span>{otroNombre} · {formatMonto(otrosPagos)}</span>
               </div>
               <div className="h-1.5 bg-white/30 rounded-full overflow-hidden">
                 <div
@@ -171,6 +198,11 @@ export default function Dashboard() {
                 />
               </div>
             </div>
+          )}
+          {(pagosRecibidos > 0 || pagosRealizados > 0) && (
+            <p className="text-[11px] opacity-90 mt-3 leading-snug border-t border-white/20 pt-3">
+              Transferencias del mes registradas · Recibiste {formatMonto(pagosRecibidos)} · Pagaste {formatMonto(pagosRealizados)}
+            </p>
           )}
         </button>
 
