@@ -25,6 +25,7 @@ export default function Dashboard() {
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [gastos, setGastos] = useState([])
+  const [liquidaciones, setLiquidaciones] = useState([])
   const [perfiles, setPerfiles] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -37,8 +38,9 @@ export default function Dashboard() {
     const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split('T')[0]
     const fin = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).toISOString().split('T')[0]
 
-    const [{ data: gastosData }, { data: perfilesData }] = await Promise.all([
+    const [{ data: gastosData }, { data: liquidacionesData }, { data: perfilesData }] = await Promise.all([
       supabase.from('gastos').select('*').gte('fecha', inicio).lte('fecha', fin).order('fecha', { ascending: false }),
+      supabase.from('liquidaciones').select('*').gte('fecha', inicio).lte('fecha', fin),
       supabase.from('perfiles').select('*'),
     ])
 
@@ -52,6 +54,7 @@ export default function Dashboard() {
     }
 
     setGastos(gastosData ?? [])
+    setLiquidaciones(liquidacionesData ?? [])
     setLoading(false)
   }
 
@@ -78,7 +81,17 @@ export default function Dashboard() {
     .filter(g => g.pagado_por !== user.id)
     .reduce((a, g) => a + Number(g.monto) * (1 - (g.porcentaje_pagador ?? 50) / 100), 0)
 
-  const balance = meDebenTotal - deboTotal
+  const balanceBruto = meDebenTotal - deboTotal
+
+  const pagosRecibidos = liquidaciones
+    .filter(l => l.pagado_a === user.id)
+    .reduce((a, l) => a + Number(l.monto), 0)
+
+  const pagosRealizados = liquidaciones
+    .filter(l => l.pagado_por === user.id)
+    .reduce((a, l) => a + Number(l.monto), 0)
+
+  const balance = balanceBruto - pagosRecibidos + pagosRealizados
 
   const misPagos   = gastos.filter(g => g.pagado_por === user.id).reduce((a, g) => a + Number(g.monto), 0)
   const otrosPagos = gastos.filter(g => g.pagado_por !== user.id).reduce((a, g) => a + Number(g.monto), 0)

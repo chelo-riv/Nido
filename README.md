@@ -206,7 +206,7 @@ src/
 │   └── categorias.js        # Catálogo de categorías con emoji y label
 ├── pages/
 │   ├── Login.jsx            # Login + Registro (tabs)
-│   ├── Dashboard.jsx        # Resumen del mes + balance + últimos gastos
+│   ├── Dashboard.jsx        # Resumen del mes + balance neto (gastos + liquidaciones) + últimos gastos
 │   ├── Gastos.jsx           # Lista por mes (navegación) + filtros + editar/eliminar inline
 │   ├── AgregarGasto.jsx     # Formulario de nuevo gasto
 │   ├── EditarGasto.jsx      # Formulario de edición (/editar/:id)
@@ -289,7 +289,7 @@ Cualquier usuario autenticado puede leer y escribir todos los datos. Esto es int
 Todos los usuarios registrados en el proyecto de Supabase pertenecen al mismo hogar implícitamente. Simple y suficiente para el caso de uso de 2 personas.
 
 **Balance por mes, no acumulativo**
-El Dashboard y Balances muestran el mes en curso. Las deudas de meses anteriores no se arrastran automáticamente — se asume que se saldan mes a mes con liquidaciones.
+El Dashboard (tarjeta «Balance del mes») y Balances comparten la misma lógica de balance neto incluyendo liquidaciones del mes visible. Las deudas de meses anteriores no se arrastran automáticamente — se asume que se saldan mes a mes con liquidaciones.
 
 **Perfil auto-creado en primer login**
 No hay pantalla de onboarding. El nombre se genera del email y puede ajustarse editando directamente en Supabase Table Editor por ahora.
