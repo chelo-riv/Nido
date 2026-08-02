@@ -198,25 +198,49 @@ npm run build
 ```
 src/
 ├── components/
-│   └── BottomNav.jsx        # Barra de navegación inferior fija (5 tabs)
+│   ├── BottomNav.jsx        # Barra de navegación inferior fija (5 tabs)
+│   └── SelectorMes.jsx      # Navegador « Mes Año » compartido por las pantallas de finanzas
 ├── hooks/
 │   └── useAuth.js           # Hook que expone { user, loading } via Supabase session
 ├── lib/
 │   ├── supabase.js          # Cliente de Supabase (singleton)
-│   └── categorias.js        # Catálogo de categorías con emoji y label
+│   ├── categorias.js        # Catálogo de categorías con emoji y label
+│   ├── fechas.js            # Helpers de mes "YYYY-MM" (rango, etiqueta, param ?mes=)
+│   └── balance.js           # Cálculo del balance neto de un mes (gastos + liquidaciones)
 ├── pages/
 │   ├── Login.jsx            # Login + Registro (tabs)
-│   ├── Dashboard.jsx        # Resumen del mes + balance neto (gastos + liquidaciones) + últimos gastos
+│   ├── Dashboard.jsx        # Balance del mes con navegación entre meses + últimos gastos
 │   ├── Gastos.jsx           # Lista por mes (navegación) + filtros + editar/eliminar inline
-│   ├── AgregarGasto.jsx     # Formulario de nuevo gasto
+│   ├── AgregarGasto.jsx     # Formulario de nuevo gasto (acepta ?fecha= para meses pasados)
 │   ├── EditarGasto.jsx      # Formulario de edición (/editar/:id)
-│   ├── Balances.jsx         # Balance neto + desglose + liquidaciones (dirección, cantidad, fecha, nota)
+│   ├── Balances.jsx         # Balance por mes + desglose + liquidaciones (dirección, cantidad, fecha, nota)
 │   ├── Presupuestos.jsx     # Límites por categoría con barra de progreso
 │   ├── Graficas.jsx         # Pie chart por categoría + barras por semana
 │   ├── Wishlist.jsx         # Índice de wishlists (crear / abrir / archivadas)
 │   └── WishlistDetalle.jsx  # Ítems de una wishlist (link, notas, prioridad, comprado)
 └── App.jsx                  # Router principal + RutaProtegida HOC
 ```
+
+---
+
+## Meses pasados y ajustes
+
+Todas las pantallas de finanzas se ven mes por mes y se navegan con el mismo control « Mes Año »:
+
+| Pantalla | Qué se ve del mes seleccionado | Qué se puede ajustar |
+|---|---|---|
+| Dashboard | Balance neto, quién pagó cuánto, transferencias y últimos gastos | Atajo para agregar un gasto con fecha de ese mes |
+| Gastos | Lista filtrable de gastos | Editar o eliminar cualquier gasto |
+| Balances | Balance neto, desglose y pagos registrados | Registrar un pago con la fecha que sea |
+| Gráficas | Categorías y semanas | — |
+
+Detalles útiles:
+
+- El mes viaja entre pantallas con `?mes=YYYY-MM`, así que al entrar a Gastos o Balances desde el Dashboard se abre el mismo mes.
+- No se puede avanzar más allá del mes actual; el enlace «Ir a este mes» regresa de un toque.
+- Si el mes que se está viendo no tiene nada, el Dashboard muestra atajos a los meses que sí tienen movimiento.
+- Al agregar un gasto desde un mes pasado, la fecha se propone en ese mes y al guardar se vuelve al mes del gasto.
+- Al registrar un pago en Balances, la fecha por defecto es el último día del mes visible (u hoy, si es el mes actual). Si se guarda con una fecha de otro mes, aparece un aviso con el atajo para ir a verlo.
 
 ---
 
@@ -246,7 +270,7 @@ Ejemplo:
 El porcentaje es **por gasto**, no global. Cada gasto puede tener su propia proporción.
 
 ### `liquidaciones`
-Pagos para saldar la deuda acumulada. `fecha` decide en qué mes entra el pago para el balance de Balances (solo se cargan liquidaciones del mes en pantalla). `nota` es texto libre opcional (comentario o referencia del traspaso).
+Pagos para saldar la deuda acumulada. `fecha` decide en qué mes entra el pago (solo se cargan las liquidaciones del mes que se está viendo). `nota` es texto libre opcional (comentario o referencia del traspaso).
 
 El balance neto se calcula así:
 
@@ -289,7 +313,10 @@ Cualquier usuario autenticado puede leer y escribir todos los datos. Esto es int
 Todos los usuarios registrados en el proyecto de Supabase pertenecen al mismo hogar implícitamente. Simple y suficiente para el caso de uso de 2 personas.
 
 **Balance por mes, no acumulativo**
-El Dashboard (tarjeta «Balance del mes») y Balances comparten la misma lógica de balance neto incluyendo liquidaciones del mes visible. Las deudas de meses anteriores no se arrastran automáticamente — se asume que se saldan mes a mes con liquidaciones.
+El Dashboard (tarjeta «Balance del mes») y Balances comparten la misma lógica de balance neto (`src/lib/balance.js`) incluyendo liquidaciones del mes visible. Las deudas de meses anteriores no se arrastran automáticamente — se asume que se saldan mes a mes con liquidaciones.
+
+**El mes visible vive en la URL**
+Dashboard, Gastos, Balances y Gráficas guardan el mes que se está viendo en `?mes=YYYY-MM` (se omite cuando es el mes actual). Así el mes se conserva al recargar y se arrastra al saltar de una pantalla a otra. Todo el manejo de meses está en `src/lib/fechas.js` y el navegador visual en `src/components/SelectorMes.jsx`.
 
 **Perfil auto-creado en primer login**
 No hay pantalla de onboarding. El nombre se genera del email y puede ajustarse editando directamente en Supabase Table Editor por ahora.

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { LISTA_CATEGORIAS } from '../lib/categorias'
+import { esFechaValida, esMesActual, etiquetaMes, fechaLocalHoy, mesDesdeFecha, sufijoMes } from '../lib/fechas'
 import BottomNav from '../components/BottomNav'
 
 const PRESETS = [
@@ -13,21 +14,19 @@ const PRESETS = [
   { label: '30 / 70', valor: 30 },
 ]
 
-// Fecha local (toISOString sería UTC y desfasaba un día según zona horaria)
-function hoy() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 export default function AgregarGasto() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // ?fecha= la manda la pantalla anterior cuando se está viendo un mes pasado.
+  const fechaInicial = searchParams.get('fecha')
 
   const [monto, setMonto]               = useState('')
   const [descripcion, setDescripcion]   = useState('')
   const [categoria, setCategoria]       = useState('')
   const [pagadoPor, setPagadoPor]       = useState('')
-  const [fecha, setFecha]               = useState(hoy())
+  const [fecha, setFecha]               = useState(() => (esFechaValida(fechaInicial) ? fechaInicial : fechaLocalHoy()))
   const [tipo, setTipo]                 = useState('compartido')
   const [porcentaje, setPorcentaje]     = useState(50)
   const [porcentajeCustom, setPorcentajeCustom] = useState('')
@@ -93,7 +92,8 @@ export default function AgregarGasto() {
       setError('Ocurrió un error al guardar. Intenta de nuevo.')
       setGuardando(false)
     } else {
-      navigate('/dashboard')
+      // Se vuelve al mes del gasto para que se vea reflejado aunque no sea el mes actual.
+      navigate(`/dashboard${sufijoMes(mesDesdeFecha(fecha))}`)
     }
   }
 
@@ -303,6 +303,11 @@ export default function AgregarGasto() {
             onChange={e => setFecha(e.target.value)}
             className="w-full px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A] transition-colors"
           />
+          {!esMesActual(mesDesdeFecha(fecha)) && (
+            <p className="text-[11px] text-[#8C7E75] mt-2">
+              Este gasto contará en el balance de {etiquetaMes(mesDesdeFecha(fecha))}.
+            </p>
+          )}
         </div>
 
         {/* Error */}

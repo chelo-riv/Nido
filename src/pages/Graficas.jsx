@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -7,6 +7,8 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
+import { esMesActual, mesDesdeParams, rangoMes, referenciaMes } from '../lib/fechas'
+import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
 
 const COLORES_CAT = {
@@ -53,21 +55,15 @@ function CustomTooltipBar({ active, payload, label }) {
 
 export default function Graficas() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const ahora = new Date()
-  const [anio, setAnio]   = useState(ahora.getFullYear())
-  const [mes, setMes]     = useState(ahora.getMonth())
+  const [mes, setMes]     = useState(() => mesDesdeParams(searchParams))
   const [gastos, setGastos] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    if (user) cargarDatos()
-  }, [user, anio, mes])
-
   async function cargarDatos() {
     setLoading(true)
-    const inicio = new Date(anio, mes, 1).toISOString().split('T')[0]
-    const fin    = new Date(anio, mes + 1, 0).toISOString().split('T')[0]
+    const { inicio, fin } = rangoMes(mes)
 
     const { data } = await supabase
       .from('gastos')
@@ -79,14 +75,20 @@ export default function Graficas() {
     setLoading(false)
   }
 
-  function cambiarMes(delta) {
-    const d = new Date(anio, mes + delta, 1)
-    setAnio(d.getFullYear())
-    setMes(d.getMonth())
-  }
+  // El mes visible queda en la URL para no perderlo al recargar o al venir del Dashboard.
+  useEffect(() => {
+    const enUrl = searchParams.get('mes')
+    const deseado = esMesActual(mes) ? null : mes
+    if (enUrl === deseado) return
+    const params = new URLSearchParams(searchParams)
+    if (deseado) params.set('mes', deseado)
+    else params.delete('mes')
+    setSearchParams(params, { replace: true })
+  }, [mes]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const nombreMes = new Date(anio, mes, 1)
-    .toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+  useEffect(() => {
+    if (user) cargarDatos()
+  }, [user, mes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalMes = gastos.reduce((a, g) => a + Number(g.monto), 0)
 
@@ -120,26 +122,9 @@ export default function Graficas() {
     <div className="min-h-screen bg-[#FAF7F4] pb-24 flex flex-col">
 
       {/* Header */}
-      <div className="bg-white border-b border-[#EDE8E3] px-5 pt-12 pb-4">
-        <h1 className="text-lg font-bold text-[#2D2926] mb-3">Gráficas</h1>
-
-        {/* Selector de mes */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => cambiarMes(-1)}
-            className="p-2 rounded-xl text-[#8C7E75] hover:bg-[#FAF7F4] transition-colors"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <p className="text-sm font-semibold text-[#2D2926] capitalize">{nombreMes}</p>
-          <button
-            onClick={() => cambiarMes(1)}
-            disabled={anio === ahora.getFullYear() && mes === ahora.getMonth()}
-            className="p-2 rounded-xl text-[#8C7E75] hover:bg-[#FAF7F4] disabled:opacity-30 transition-colors"
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
+      <div className="bg-white border-b border-[#EDE8E3] px-4 pt-12 pb-4">
+        <h1 className="text-lg font-bold text-[#2D2926] mb-3 px-1">Gráficas</h1>
+        <SelectorMes mes={mes} onCambiar={setMes} />
       </div>
 
       {loading ? (
@@ -149,7 +134,7 @@ export default function Graficas() {
       ) : gastos.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center py-20">
           <p className="text-4xl mb-3">🌿</p>
-          <p className="text-sm text-[#8C7E75]">Sin gastos en este mes</p>
+          <p className="text-sm text-[#8C7E75]">Sin gastos {referenciaMes(mes)}</p>
         </div>
       ) : (
         <div className="px-4 pt-5 flex flex-col gap-4">

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Trash2, Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS, LISTA_CATEGORIAS } from '../lib/categorias'
+import { esMesActual, fechaPorDefectoDelMes, mesDesdeFecha, mesDesdeParams } from '../lib/fechas'
+import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
 
 function formatMonto(n) {
@@ -15,44 +17,19 @@ function formatFecha(fechaStr) {
   return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })
 }
 
-function yyyyMmDesdeFecha(fechaStr) {
-  if (!fechaStr) return ''
-  return String(fechaStr).slice(0, 10).slice(0, 7)
-}
-
-function yyyyMmHoy() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function addMeses(ym, delta) {
-  const [y, m] = ym.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function etiquetaMes(ym) {
-  const [y, m] = ym.split('-').map(Number)
-  const s = new Date(y, m - 1, 1).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
 export default function Gastos() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [gastos, setGastos]           = useState([])
   const [perfiles, setPerfiles]       = useState([])
   const [loading, setLoading]         = useState(true)
-  const [mes, setMes] = useState(() => yyyyMmHoy())
+  const [mes, setMes] = useState(() => mesDesdeParams(searchParams))
   const [filtroUsuario, setFiltroUsuario] = useState('todos')
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const [gastoActivo, setGastoActivo] = useState(null) // id del gasto con opciones abiertas
   const [eliminando, setEliminando]   = useState(false)
-
-  useEffect(() => {
-    if (user) cargarDatos()
-  }, [user])
 
   async function cargarDatos() {
     const [{ data: gastosData }, { data: perfilesData }] = await Promise.all([
@@ -63,6 +40,21 @@ export default function Gastos() {
     setPerfiles(perfilesData ?? [])
     setLoading(false)
   }
+
+  // El mes visible queda en la URL para no perderlo al recargar o al venir del Dashboard.
+  useEffect(() => {
+    const enUrl = searchParams.get('mes')
+    const deseado = esMesActual(mes) ? null : mes
+    if (enUrl === deseado) return
+    const params = new URLSearchParams(searchParams)
+    if (deseado) params.set('mes', deseado)
+    else params.delete('mes')
+    setSearchParams(params, { replace: true })
+  }, [mes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (user) cargarDatos()
+  }, [user])
 
   async function eliminarGasto(id) {
     setEliminando(true)
@@ -80,12 +72,12 @@ export default function Gastos() {
 
   const otroUsuario = perfiles.find(p => p.id !== user?.id)
 
-  const mesesConGasto = [...new Set(gastos.map(g => yyyyMmDesdeFecha(g.fecha)).filter(Boolean))].sort(
+  const mesesConGasto = [...new Set(gastos.map(g => mesDesdeFecha(g.fecha)).filter(Boolean))].sort(
     (a, b) => b.localeCompare(a)
   )
 
   const gastosFiltrados = gastos.filter(g => {
-    if (yyyyMmDesdeFecha(g.fecha) !== mes) return false
+    if (mesDesdeFecha(g.fecha) !== mes) return false
     if (filtroUsuario !== 'todos' && g.pagado_por !== filtroUsuario) return false
     if (filtroCategoria && g.categoria !== filtroCategoria) return false
     return true
@@ -109,7 +101,7 @@ export default function Gastos() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-lg font-bold text-[#2D2926]">Gastos</h1>
           <button
-            onClick={() => navigate('/agregar')}
+            onClick={() => navigate(esMesActual(mes) ? '/agregar' : `/agregar?fecha=${fechaPorDefectoDelMes(mes)}`)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#D4845A] text-white text-sm font-medium"
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -119,37 +111,7 @@ export default function Gastos() {
 
         {/* Mes */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-1 min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => setMes(m => addMeses(m, -1))}
-              className="p-2 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] hover:bg-[#EDE8E3]/60 transition-colors"
-              aria-label="Mes anterior"
-            >
-              <ChevronLeft size={18} strokeWidth={2.2} />
-            </button>
-            <div className="flex-1 text-center min-w-0">
-              <p className="text-sm font-bold text-[#2D2926] truncate">{etiquetaMes(mes)}</p>
-              {mes !== yyyyMmHoy() && (
-                <button
-                  type="button"
-                  onClick={() => setMes(yyyyMmHoy())}
-                  className="text-[11px] font-medium text-[#D4845A] mt-0.5"
-                >
-                  Ir a este mes
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setMes(m => addMeses(m, 1))}
-              disabled={mes >= yyyyMmHoy()}
-              className="p-2 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] hover:bg-[#EDE8E3]/60 transition-colors disabled:opacity-35 disabled:pointer-events-none"
-              aria-label="Mes siguiente"
-            >
-              <ChevronRight size={18} strokeWidth={2.2} />
-            </button>
-          </div>
+          <SelectorMes mes={mes} onCambiar={setMes} className="min-w-0 flex-1" />
           <div className="text-right flex-shrink-0 pl-1">
             <p className="text-[10px] font-medium text-[#8C7E75] uppercase tracking-wide">Total</p>
             <p className="text-sm font-bold text-[#2D2926] tabular-nums">{formatMonto(totalMes)}</p>
@@ -211,7 +173,7 @@ export default function Gastos() {
           <div className="flex-1 flex flex-col items-center justify-center py-20">
             <p className="text-3xl mb-3">🌿</p>
             <p className="text-sm text-[#8C7E75] text-center px-4">
-              {gastos.some(g => yyyyMmDesdeFecha(g.fecha) === mes)
+              {gastos.some(g => mesDesdeFecha(g.fecha) === mes)
                 ? 'Sin gastos con ese filtro'
                 : mesesConGasto.length === 0
                   ? 'Aún no hay gastos registrados'
@@ -222,7 +184,6 @@ export default function Gastos() {
           gastosFiltrados.map(gasto => {
             const cat = CATEGORIAS[gasto.categoria] ?? CATEGORIAS.otros
             const abierto = gastoActivo === gasto.id
-            const esMio = gasto.pagado_por === user?.id
             const esCompartido = gasto.tipo === 'compartido' || !gasto.tipo
 
             return (

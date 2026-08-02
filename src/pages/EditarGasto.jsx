@@ -4,6 +4,7 @@ import { ArrowLeft, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { LISTA_CATEGORIAS } from '../lib/categorias'
+import { esMesActual, etiquetaMes, mesDesdeFecha, sufijoMes } from '../lib/fechas'
 import BottomNav from '../components/BottomNav'
 
 const PRESETS = [
@@ -104,7 +105,8 @@ export default function EditarGasto() {
       setError('Ocurrió un error al guardar. Intenta de nuevo.')
       setGuardando(false)
     } else {
-      navigate('/gastos')
+      // Se vuelve al mes del gasto: si le cambiaron la fecha, se ve donde quedó.
+      navigate(`/gastos${sufijoMes(mesDesdeFecha(fecha))}`)
     }
   }
 
@@ -305,6 +307,11 @@ export default function EditarGasto() {
             onChange={e => setFecha(e.target.value)}
             className="w-full px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A] transition-colors"
           />
+          {fecha && !esMesActual(mesDesdeFecha(fecha)) && (
+            <p className="text-[11px] text-[#8C7E75] mt-2">
+              Este gasto cuenta en el balance de {etiquetaMes(mesDesdeFecha(fecha))}.
+            </p>
+          )}
         </div>
 
         {error && (

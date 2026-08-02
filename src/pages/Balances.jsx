@@ -1,8 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
+import { calcularBalance } from '../lib/balance'
+import {
+  esMesActual, etiquetaMes, fechaPorDefectoDelMes, mesDesdeFecha,
+  mesDesdeParams, rangoMes, referenciaMes,
+} from '../lib/fechas'
+import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
 
 function formatMonto(n) {
@@ -14,45 +21,35 @@ function formatFecha(fechaStr) {
   return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })
 }
 
-function nombreDelMes() {
-  return new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
-}
-
-function fechaLocalHoy() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function ymPantallaActual() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
 export default function Balances() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
 
+  const [mes, setMes]                   = useState(() => mesDesdeParams(searchParams))
   const [gastos, setGastos]             = useState([])
   const [liquidaciones, setLiquidaciones] = useState([])
   const [perfiles, setPerfiles]         = useState([])
   const [loading, setLoading]           = useState(true)
+  const [actualizando, setActualizando] = useState(false)
   const [mostrarLiquidar, setMostrarLiquidar] = useState(false)
   const [montoLiquidar, setMontoLiquidar] = useState('')
   // recibi = el otro me transfirió | pague = yo le transferí al otro
   const [direccionTransferencia, setDireccionTransferencia] = useState('recibi')
-  const [fechaLiquidacion, setFechaLiquidacion] = useState(() => fechaLocalHoy())
+  const [fechaLiquidacion, setFechaLiquidacion] = useState(() => fechaPorDefectoDelMes(mesDesdeParams(searchParams)))
   const [notaLiquidacion, setNotaLiquidacion] = useState('')
   const [guardando, setGuardando]       = useState(false)
   const [mostrarDesglose, setMostrarDesglose] = useState(false)
-  const [avisoExito, setAvisoExito]     = useState('')
+  // Guarda el mes de un pago que se anotó con fecha fuera del mes visible.
+  const [avisoMesGuardado, setAvisoMesGuardado] = useState('')
 
-  useEffect(() => {
-    if (user) cargarDatos()
-  }, [user])
+  // Cada carga lleva número: si contesta una petición vieja (cambio rápido de mes) se descarta.
+  const peticionRef = useRef(0)
 
   async function cargarDatos() {
-    const ahora = new Date()
-    const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split('T')[0]
-    const fin = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).toISOString().split('T')[0]
+    const peticion = ++peticionRef.current
+    setActualizando(true)
+
+    const { inicio, fin } = rangoMes(mes)
 
     const [{ data: gastosData }, { data: liquidacionesData }, { data: perfilesData }] = await Promise.all([
       supabase.from('gastos').select('*').gte('fecha', inicio).lte('fecha', fin),
@@ -60,10 +57,34 @@ export default function Balances() {
       supabase.from('perfiles').select('*'),
     ])
 
+    if (peticion !== peticionRef.current) return
+
     setGastos(gastosData ?? [])
     setLiquidaciones(liquidacionesData ?? [])
     setPerfiles(perfilesData ?? [])
     setLoading(false)
+    setActualizando(false)
+  }
+
+  // El mes visible queda en la URL para no perderlo al recargar o al venir del Dashboard.
+  useEffect(() => {
+    const enUrl = searchParams.get('mes')
+    const deseado = esMesActual(mes) ? null : mes
+    if (enUrl === deseado) return
+    const params = new URLSearchParams(searchParams)
+    if (deseado) params.set('mes', deseado)
+    else params.delete('mes')
+    setSearchParams(params, { replace: true })
+  }, [mes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (user) cargarDatos()
+  }, [user, mes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function cambiarMes(nuevoMes) {
+    setMes(nuevoMes)
+    setMostrarDesglose(false)
+    cerrarFormLiquidar(nuevoMes)
   }
 
   async function liquidar() {
@@ -87,15 +108,16 @@ export default function Balances() {
     const { error } = await supabase.from('liquidaciones').insert(payload)
 
     if (!error) {
-      const guardadoFueraDelMesVisible = fechaLiquidacion.slice(0, 7) !== ymPantallaActual()
+      const mesDelPago = mesDesdeFecha(fechaLiquidacion)
       setMontoLiquidar('')
       setNotaLiquidacion('')
-      setFechaLiquidacion(fechaLocalHoy())
+      setFechaLiquidacion(fechaPorDefectoDelMes(mes))
       setMostrarLiquidar(false)
       setDireccionTransferencia('recibi')
-      if (guardadoFueraDelMesVisible) {
-        setAvisoExito('Pago guardado. La fecha es de otro mes: no aparecerá en la lista de este mes.')
-        window.setTimeout(() => setAvisoExito(''), 7000)
+      if (mesDelPago !== mes) {
+        // El pago cuenta en el mes de su fecha, así que dejamos el atajo para ir a verlo.
+        setAvisoMesGuardado(mesDelPago)
+        window.setTimeout(() => setAvisoMesGuardado(''), 9000)
       }
       await cargarDatos()
     }
@@ -115,35 +137,15 @@ export default function Balances() {
   const otroUsuario = perfiles.find(p => p.id !== user.id)
   const miNombre    = miPerfil?.nombre ?? 'Yo'
 
-  // Balance de gastos compartidos
-  const compartidos = gastos.filter(g => g.tipo === 'compartido' || !g.tipo)
-
-  const meDebenTotal = compartidos
-    .filter(g => g.pagado_por === user.id)
-    .reduce((a, g) => a + Number(g.monto) * (1 - (g.porcentaje_pagador ?? 50) / 100), 0)
-
-  const deboTotal = compartidos
-    .filter(g => g.pagado_por !== user.id)
-    .reduce((a, g) => a + Number(g.monto) * (1 - (g.porcentaje_pagador ?? 50) / 100), 0)
-
-  const balanceBruto = meDebenTotal - deboTotal
-
-  // Ajuste por liquidaciones del mes
-  const pagosRecibidos = liquidaciones
-    .filter(l => l.pagado_a === user.id)
-    .reduce((a, l) => a + Number(l.monto), 0)
-
-  const pagosRealizados = liquidaciones
-    .filter(l => l.pagado_por === user.id)
-    .reduce((a, l) => a + Number(l.monto), 0)
-
-  const balance = balanceBruto - pagosRecibidos + pagosRealizados
+  const {
+    compartidos, balanceBruto, pagosRecibidos, pagosRealizados, balance, estanAMano,
+  } = calcularBalance({ gastos, liquidaciones, userId: user.id })
 
   function abrirLiquidarDesdeSaldo() {
     if (balance > 0) setDireccionTransferencia('recibi')
     else if (balance < 0) setDireccionTransferencia('pague')
-    setMontoLiquidar(Math.abs(balance) > 0.5 ? String(Math.round(Math.abs(balance))) : '')
-    setFechaLiquidacion(fechaLocalHoy())
+    setMontoLiquidar(estanAMano ? '' : String(Math.round(Math.abs(balance))))
+    setFechaLiquidacion(fechaPorDefectoDelMes(mes))
     setNotaLiquidacion('')
     setMostrarLiquidar(true)
   }
@@ -151,46 +153,55 @@ export default function Balances() {
   function abrirLiquidarManual() {
     setDireccionTransferencia('recibi')
     setMontoLiquidar('')
-    setFechaLiquidacion(fechaLocalHoy())
+    setFechaLiquidacion(fechaPorDefectoDelMes(mes))
     setNotaLiquidacion('')
     setMostrarLiquidar(true)
   }
 
-  function cerrarFormLiquidar() {
+  // mesReferencia permite dejar la fecha lista para el mes al que se acaba de cambiar.
+  function cerrarFormLiquidar(mesReferencia = mes) {
     setMostrarLiquidar(false)
     setDireccionTransferencia('recibi')
-    setFechaLiquidacion(fechaLocalHoy())
+    setFechaLiquidacion(fechaPorDefectoDelMes(mesReferencia))
     setNotaLiquidacion('')
   }
 
-  const hayBalance = Math.abs(balance) > 0.5
+  const hayBalance = !estanAMano
   const meDeben = balance > 0
   const nombreDeudor  = meDeben ? (otroUsuario?.nombre ?? 'Tu pareja') : miNombre
   const nombreAcreedor = meDeben ? miNombre : (otroUsuario?.nombre ?? 'Tu pareja')
+  const referencia = referenciaMes(mes)
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] pb-24 flex flex-col">
 
       {/* Header */}
-      <div className="bg-white border-b border-[#EDE8E3] px-5 pt-12 pb-4">
-        <p className="text-xs text-[#8C7E75] capitalize">{nombreDelMes()}</p>
-        <h1 className="text-lg font-bold text-[#2D2926]">Balances</h1>
+      <div className="bg-white border-b border-[#EDE8E3] px-4 pt-12 pb-4">
+        <h1 className="text-lg font-bold text-[#2D2926] px-1 mb-3">Balances</h1>
+        <SelectorMes mes={mes} onCambiar={cambiarMes} />
       </div>
 
       <div className="px-4 pt-5 flex flex-col gap-4">
-        {avisoExito && (
-          <div className="rounded-xl border border-[#D4845A]/40 bg-[#FDF6F3] px-3 py-2 text-xs text-[#2D2926]">
-            {avisoExito}
+        {avisoMesGuardado && (
+          <div className="rounded-xl border border-[#D4845A]/40 bg-[#FDF6F3] px-3 py-2 text-xs text-[#2D2926] flex items-center justify-between gap-2">
+            <span>Pago guardado con fecha de otro mes: cuenta en {etiquetaMes(avisoMesGuardado)}.</span>
+            <button
+              type="button"
+              onClick={() => { cambiarMes(avisoMesGuardado); setAvisoMesGuardado('') }}
+              className="flex-shrink-0 font-semibold text-[#D4845A]"
+            >
+              Ver ese mes
+            </button>
           </div>
         )}
 
         {/* Tarjeta de balance principal */}
-        <div className={`rounded-2xl p-6 text-white ${meDeben ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'}`}>
+        <div className={`rounded-2xl p-6 text-white transition-opacity ${meDeben ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'} ${actualizando ? 'opacity-60' : ''}`}>
           {!hayBalance ? (
             <div className="text-center py-2">
               <p className="text-3xl mb-2">🎉</p>
               <p className="text-xl font-bold">¡Están a mano!</p>
-              <p className="text-sm opacity-80 mt-1">No hay deuda pendiente este mes</p>
+              <p className="text-sm opacity-80 mt-1">No hay deuda pendiente {referencia}</p>
               {otroUsuario && (
                 <button
                   type="button"
@@ -299,9 +310,9 @@ export default function Balances() {
                 onChange={e => setFechaLiquidacion(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A]"
               />
-              {fechaLiquidacion.slice(0, 7) !== ymPantallaActual() && (
+              {mesDesdeFecha(fechaLiquidacion) !== mes && (
                 <p className="text-[11px] text-[#C0614A] mt-1.5">
-                  Este mes no es el que estás viendo arriba: el pago contará solo en el mes de esa fecha.
+                  Esa fecha no es del mes que estás viendo ({etiquetaMes(mes)}): el pago contará solo en su propio mes.
                 </p>
               )}
             </div>
@@ -391,7 +402,7 @@ export default function Balances() {
         {/* Historial de liquidaciones */}
         {liquidaciones.length > 0 && (
           <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
-            <p className="text-sm font-semibold text-[#2D2926] mb-3">Pagos registrados este mes</p>
+            <p className="text-sm font-semibold text-[#2D2926] mb-3">Pagos registrados {referencia}</p>
             <div className="flex flex-col gap-2">
               {liquidaciones.map(liq => {
                 const pagadorNombre = liq.pagado_por === user.id ? miNombre : (otroUsuario?.nombre ?? '?')
@@ -426,7 +437,7 @@ export default function Balances() {
         {compartidos.length === 0 && liquidaciones.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16">
             <p className="text-4xl mb-3">🌿</p>
-            <p className="text-sm text-[#8C7E75]">Sin gastos compartidos este mes</p>
+            <p className="text-sm text-[#8C7E75]">Sin gastos compartidos {referencia}</p>
           </div>
         )}
 
