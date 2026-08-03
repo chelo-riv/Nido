@@ -150,7 +150,7 @@ create policy "usuarios autenticados" on items_lista for all to authenticated us
 
 **Wishlists — proyectos que ya tenían la tabla `wishlist` (modelo antiguo):** la app usa `wishlists` y `wishlist_items`. Crea esas tablas y políticas con el bloque de arriba (o solo el fragmento `create table if not exists` + `alter` + `create policy` si el resto ya existe). Los datos viejos en `wishlist` no se migran solos; puedes copiarlos en el Table Editor o dejar la tabla sin usar.
 
-**Proyectos ya creados:** en el SQL Editor de Supabase, añade las columnas nuevas de liquidaciones y deja la política con `WITH CHECK` (sin eso el INSERT del arrastre puede fallar aunque el SELECT sí funcione). Después recarga el schema de PostgREST:
+**Proyectos ya creados:** el arrastre funciona sin la columna `tipo` (se marca con el prefijo `[arrastre]` en `nota`). Aun así conviene añadir `tipo` y dejar la política con `WITH CHECK`:
 
 ```sql
 alter table liquidaciones add column if not exists nota text;
@@ -164,7 +164,15 @@ create policy "usuarios autenticados" on liquidaciones
 notify pgrst, 'reload schema';
 ```
 
-Si el arrastre sigue fallando con un mensaje de "schema cache" o de columna `tipo`, en el dashboard de Supabase ve a **Project Settings → API → Reload schema** (o vuelve a correr el `notify` de arriba).
+Para comprobar que la columna quedó:
+
+```sql
+select column_name, data_type, column_default
+from information_schema.columns
+where table_name = 'liquidaciones' and column_name in ('tipo', 'nota');
+```
+
+Si PostgREST sigue sin verla: **Project Settings → API → Reload schema** (o vuelve a correr el `notify`).
 
 **Lista del súper — error RLS en `items_lista`:** si al agregar un ítem aparece *new row violates row-level security policy*, las tablas existen pero faltan políticas que permitan `INSERT` (o el `WITH CHECK` no aplica).
 
@@ -260,7 +268,7 @@ Detalles útiles:
 
 Cuando un mes cerrado queda con saldo pendiente, el Dashboard y Balances muestran un botón *Arrastrar saldo a &lt;mes siguiente&gt;*. Al tocarlo el mes de origen queda en cero y el monto aparece en el mes siguiente, sin que nadie haya transferido dinero.
 
-No hay tabla nueva: se insertan dos liquidaciones espejo con `tipo = 'arrastre'` (ver `src/lib/arrastre.js`).
+No hay tabla nueva: se insertan dos liquidaciones espejo marcadas con el prefijo `[arrastre]` en `nota` (ver `src/lib/arrastre.js`). Si la columna `tipo` ya existe y PostgREST la ve, puedes rellenar `tipo = 'arrastre'` a mano; la app las reconoce por nota o por tipo.
 
 | Fila | Fecha | Efecto |
 |---|---|---|
