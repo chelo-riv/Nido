@@ -233,9 +233,9 @@ Todas las pantallas de finanzas se ven mes por mes y se navegan con el mismo con
 
 | Pantalla | Qué se ve del mes seleccionado | Qué se puede ajustar |
 |---|---|---|
-| Dashboard | Balance neto, quién pagó cuánto, transferencias y últimos gastos | Atajo para agregar un gasto con fecha de ese mes |
+| Dashboard | Balance neto, quién pagó cuánto, transferencias y últimos gastos | Arrastrar el saldo pendiente y atajo para agregar un gasto con fecha de ese mes |
 | Gastos | Lista filtrable de gastos | Editar o eliminar cualquier gasto |
-| Balances | Balance neto, desglose y pagos registrados | Registrar un pago con la fecha que sea |
+| Balances | Balance neto, desglose, pagos registrados y saldos arrastrados | Registrar un pago con la fecha que sea y arrastrar el saldo pendiente |
 | Gráficas | Categorías y semanas | — |
 
 Detalles útiles:
@@ -245,6 +245,25 @@ Detalles útiles:
 - Si el mes que se está viendo no tiene nada, el Dashboard muestra atajos a los meses que sí tienen movimiento.
 - Al agregar un gasto desde un mes pasado, la fecha se propone en ese mes y al guardar se vuelve al mes del gasto.
 - Al registrar un pago en Balances, la fecha por defecto es el último día del mes visible (u hoy, si es el mes actual). Si se guarda con una fecha de otro mes, aparece un aviso con el atajo para ir a verlo.
+
+### Arrastrar el saldo al mes siguiente
+
+Cuando un mes cerrado queda con saldo pendiente, el Dashboard y Balances muestran un botón *Arrastrar saldo a &lt;mes siguiente&gt;*. Al tocarlo el mes de origen queda en cero y el monto aparece en el mes siguiente, sin que nadie haya transferido dinero.
+
+No hay tabla nueva: se insertan dos liquidaciones espejo con `tipo = 'arrastre'` (ver `src/lib/arrastre.js`).
+
+| Fila | Fecha | Efecto |
+|---|---|---|
+| Cierre | Último día del mes de origen | Anota el saldo al revés, así ese mes queda a mano |
+| Apertura | Primer día del mes destino | Vuelve a abrir el saldo en la misma dirección |
+
+Con eso la fórmula de balance de siempre da el resultado correcto en los dos meses. Notas:
+
+- El botón solo aparece en meses pasados: el siguiente del mes actual sería el futuro.
+- El arrastre es de un mes al inmediato siguiente. Para mover un saldo viejo varios meses se arrastra otra vez desde cada mes; así queda el rastro mes a mes.
+- Los arrastres no cuentan como transferencias: se listan aparte en Balances («Saldos arrastrados») y no entran en «Recibiste / Pagaste» del Dashboard.
+- Se puede arrastrar más de una vez el mismo mes; cada arrastre mueve lo que esté pendiente en ese momento.
+- Para deshacerlo se borran las dos liquidaciones de arrastre desde el Table Editor de Supabase.
 
 ---
 
@@ -274,7 +293,7 @@ Ejemplo:
 El porcentaje es **por gasto**, no global. Cada gasto puede tener su propia proporción.
 
 ### `liquidaciones`
-Pagos para saldar la deuda acumulada. `fecha` decide en qué mes entra el pago (solo se cargan las liquidaciones del mes que se está viendo). `nota` es texto libre opcional (comentario o referencia del traspaso).
+Pagos para saldar la deuda acumulada. `fecha` decide en qué mes entra el pago (solo se cargan las liquidaciones del mes que se está viendo). `nota` es texto libre opcional (comentario o referencia del traspaso). `tipo` distingue una transferencia real (`'pago'`, el valor por defecto) de un saldo movido entre meses (`'arrastre'`); las dos cuentan igual en la fórmula pero se muestran por separado.
 
 El balance neto se calcula así:
 
@@ -292,6 +311,8 @@ const pagosRealizados = liquidaciones
 const balanceNeto = balanceBruto - pagosRecibidos + pagosRealizados
 // positivo = me deben | negativo = debo
 ```
+
+Los arrastres entran en la misma resta, solo que se suman aparte para poder mostrarlos como saldo movido y no como dinero transferido.
 
 ### `presupuestos`
 Una fila por categoría (`UNIQUE`). El progreso se calcula en el frontend comparando el total de gastos del mes en esa categoría contra `monto_limite`.
@@ -316,8 +337,8 @@ Cualquier usuario autenticado puede leer y escribir todos los datos. Esto es int
 **Sin multi-household**
 Todos los usuarios registrados en el proyecto de Supabase pertenecen al mismo hogar implícitamente. Simple y suficiente para el caso de uso de 2 personas.
 
-**Balance por mes, no acumulativo**
-El Dashboard (tarjeta «Balance del mes») y Balances comparten la misma lógica de balance neto (`src/lib/balance.js`) incluyendo liquidaciones del mes visible. Las deudas de meses anteriores no se arrastran automáticamente — se asume que se saldan mes a mes con liquidaciones.
+**Balance por mes, con arrastre manual**
+El Dashboard (tarjeta «Balance del mes») y Balances comparten la misma lógica de balance neto (`src/lib/balance.js`) incluyendo liquidaciones del mes visible. Las deudas de meses anteriores no se suman solas: cada mes se cierra saldándolo con un pago o arrastrando el saldo al mes siguiente con el botón. Es manual a propósito, para que quede claro de dónde salió cada monto.
 
 **El mes visible vive en la URL**
 Dashboard, Gastos, Balances y Gráficas guardan el mes que se está viendo en `?mes=YYYY-MM` (se omite cuando es el mes actual). Así el mes se conserva al recargar y se arrastra al saltar de una pantalla a otra. Todo el manejo de meses está en `src/lib/fechas.js` y el navegador visual en `src/components/SelectorMes.jsx`.
