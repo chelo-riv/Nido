@@ -157,7 +157,7 @@ export default function Dashboard() {
 
   // ── Cálculos de balance ──────────────────────────────────────────────────
   const {
-    compartidos, balance, pagos, arrastres, pagosRecibidos, pagosRealizados,
+    compartidos, balance, pagos, ajustes, arrastres, pagosRecibidos, pagosRealizados,
     misPagos, otrosPagos, totalGastado: total, estanAMano,
   } = calcularBalance({ gastos, liquidaciones, userId: user.id })
 
@@ -165,8 +165,9 @@ export default function Dashboard() {
   const otroUsuario = perfiles.find(p => p.id !== user.id)
   const miNombre    = miPerfil?.nombre ?? user.email.split('@')[0]
   const otroNombre  = otroUsuario?.nombre ?? 'Tu pareja'
-  const nCompartidos = compartidos.length
-  const hayMovimiento = total > 0 || liquidaciones.length > 0
+  // Compartidos "de verdad": sin los ajustes de arrastre (esos se cuentan aparte).
+  const nCompartidos = compartidos.filter(g => g.categoria !== 'ajustes').length
+  const hayMovimiento = total > 0 || liquidaciones.length > 0 || ajustes.length > 0
 
   const referencia = referenciaMes(mes)
   const sufijo = sufijoMes(mes)
@@ -178,8 +179,10 @@ export default function Dashboard() {
   const mesSiguiente = sumarMeses(mes, 1)
   const puedeArrastrar = !esMesActual(mes) && !estanAMano && !!otroUsuario
   const sumaMontos = filas => filas.reduce((a, l) => a + Number(l.monto), 0)
-  const montoQueLlego = sumaMontos(arrastres.filter(l => esArrastreEntrante(l, mes)))
-  const montoQueSeFue = sumaMontos(arrastres.filter(l => !esArrastreEntrante(l, mes)))
+  // Nuevos = gastos categoría ajustes; viejos = liquidaciones marcadas como arrastre.
+  const movimientosArrastre = [...ajustes, ...arrastres]
+  const montoQueLlego = sumaMontos(movimientosArrastre.filter(l => esArrastreEntrante(l, mes)))
+  const montoQueSeFue = sumaMontos(movimientosArrastre.filter(l => !esArrastreEntrante(l, mes)))
 
   // ── Texto del balance ────────────────────────────────────────────────────
   let balanceTexto = ''

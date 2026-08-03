@@ -268,20 +268,21 @@ Detalles útiles:
 
 Cuando un mes cerrado queda con saldo pendiente, el Dashboard y Balances muestran un botón *Arrastrar saldo a &lt;mes siguiente&gt;*. Al tocarlo el mes de origen queda en cero y el monto aparece en el mes siguiente, sin que nadie haya transferido dinero.
 
-No hay tabla nueva: se insertan dos liquidaciones espejo marcadas con el prefijo `[arrastre]` en `nota` (ver `src/lib/arrastre.js`). Si la columna `tipo` ya existe y PostgREST la ve, puedes rellenar `tipo = 'arrastre'` a mano; la app las reconoce por nota o por tipo.
+No hay tabla nueva: se insertan **dos gastos** en la categoría `ajustes` (ver `src/lib/arrastre.js`), visibles en Gastos y en el historial del mes.
 
 | Fila | Fecha | Efecto |
 |---|---|---|
-| Cierre | Último día del mes de origen | Anota el saldo al revés, así ese mes queda a mano |
-| Apertura | Primer día del mes destino | Vuelve a abrir el saldo en la misma dirección |
+| Cierre | Último día del mes de origen | Gasto compartido al 0% del pagador: cancela el saldo de ese mes |
+| Apertura | Primer día del mes destino | Gasto espejo: reabre el mismo saldo en el mes siguiente |
 
 Con eso la fórmula de balance de siempre da el resultado correcto en los dos meses. Notas:
 
 - El botón solo aparece en meses pasados: el siguiente del mes actual sería el futuro.
 - El arrastre es de un mes al inmediato siguiente. Para mover un saldo viejo varios meses se arrastra otra vez desde cada mes; así queda el rastro mes a mes.
-- Los arrastres no cuentan como transferencias: se listan aparte en Balances («Saldos arrastrados») y no entran en «Recibiste / Pagaste» del Dashboard.
-- Se puede arrastrar más de una vez el mismo mes; cada arrastre mueve lo que esté pendiente en ese momento.
-- Para deshacerlo se borran las dos liquidaciones de arrastre desde el Table Editor de Supabase.
+- Aparecen en Gastos con categoría **Ajustes** (filtro incluido). No se ofrecen al agregar un gasto a mano ni en presupuestos.
+- No inflan el total gastado del Dashboard ni las gráficas: son movimiento de saldo, no consumo.
+- Se listan también en Balances («Saldos arrastrados»).
+- Para deshacerlo se borran los dos gastos de categoría `ajustes` desde Gastos o el Table Editor.
 
 ---
 
@@ -391,6 +392,8 @@ Definidas en `src/lib/categorias.js`. Para agregar una nueva categoría basta co
 ```js
 nueva: { label: 'Nueva categoría', emoji: '🎯' }
 ```
+
+`ajustes` es una categoría de sistema (`soloSistema: true`): la crea el botón de arrastrar saldo. No aparece en Agregar gasto ni en Presupuestos, sí en el filtro de Gastos.
 
 ---
 

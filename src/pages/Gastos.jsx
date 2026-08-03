@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { CATEGORIAS, LISTA_CATEGORIAS } from '../lib/categorias'
+import { CATEGORIAS, LISTA_CATEGORIAS_FILTRO } from '../lib/categorias'
 import { esMesActual, fechaPorDefectoDelMes, mesDesdeFecha, mesDesdeParams } from '../lib/fechas'
 import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
@@ -151,7 +151,7 @@ export default function Gastos() {
           >
             Todas
           </button>
-          {LISTA_CATEGORIAS.map(({ value, label, emoji }) => (
+          {LISTA_CATEGORIAS_FILTRO.map(({ value, label, emoji }) => (
             <button
               key={value}
               onClick={() => setFiltroCategoria(filtroCategoria === value ? '' : value)}

@@ -174,9 +174,11 @@ export default function Balances() {
   const miNombre    = miPerfil?.nombre ?? 'Yo'
 
   const {
-    compartidos, balanceBruto, pagos, arrastres, arrastreNeto,
+    compartidos, balanceBruto, pagos, ajustes, arrastres, arrastreNeto,
     pagosRecibidos, pagosRealizados, balance, estanAMano,
   } = calcularBalance({ gastos, liquidaciones, userId: user.id })
+  // Nuevos = gastos en Ajustes; viejos = liquidaciones de arrastre (por si ya existían).
+  const movimientosArrastre = [...ajustes, ...arrastres]
 
   function abrirLiquidarDesdeSaldo() {
     if (balance > 0) setDireccionTransferencia('recibi')
@@ -424,8 +426,8 @@ export default function Balances() {
           </div>
         )}
 
-        {/* Desglose de gastos compartidos */}
-        {compartidos.length > 0 && (
+        {/* Desglose de gastos compartidos (sin ajustes: esos van en "Saldos arrastrados") */}
+        {compartidos.filter(g => g.categoria !== 'ajustes').length > 0 && (
           <div className="bg-white rounded-2xl border border-[#EDE8E3] overflow-hidden">
             <button
               onClick={() => setMostrarDesglose(!mostrarDesglose)}
@@ -441,7 +443,7 @@ export default function Balances() {
 
             {mostrarDesglose && (
               <div className="border-t border-[#EDE8E3]">
-                {compartidos.map(gasto => {
+                {compartidos.filter(g => g.categoria !== 'ajustes').map(gasto => {
                   const cat = CATEGORIAS[gasto.categoria] ?? CATEGORIAS.otros
                   const pagadorNombre = gasto.pagado_por === user.id ? miNombre : (otroUsuario?.nombre ?? '?')
                   const pct = gasto.porcentaje_pagador ?? 50
@@ -481,33 +483,34 @@ export default function Balances() {
           </div>
         )}
 
-        {/* Saldos movidos entre meses */}
-        {arrastres.length > 0 && (
+        {/* Saldos movidos entre meses (gastos en Ajustes + arrastres viejos) */}
+        {movimientosArrastre.length > 0 && (
           <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
             <p className="text-sm font-semibold text-[#2D2926] mb-3">Saldos arrastrados</p>
             <div className="flex flex-col gap-2">
-              {arrastres.map(liq => {
-                const entrante = esArrastreEntrante(liq, mes)
-                const meSuma = liq.pagado_por === user.id
+              {movimientosArrastre.map(mov => {
+                const entrante = esArrastreEntrante(mov, mes)
+                const meSuma = mov.pagado_por === user.id
+                const titulo = mov.descripcion
+                  || (entrante
+                    ? `Viene de ${etiquetaMes(sumarMeses(mes, -1))}`
+                    : `Se movió a ${etiquetaMes(mesSiguiente)}`)
                 return (
-                  <div key={liq.id} className="flex items-center gap-3 py-1.5">
+                  <div key={mov.id} className="flex items-center gap-3 py-1.5">
                     <div className="w-8 h-8 rounded-xl bg-[#FAF0EB] flex items-center justify-center text-base flex-shrink-0">
                       🔁
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-[#2D2926]">
-                        {entrante
-                          ? `Viene de ${etiquetaMes(sumarMeses(mes, -1))}`
-                          : `Se movió a ${etiquetaMes(mesSiguiente)}`}
-                      </p>
+                      <p className="text-xs font-medium text-[#2D2926] truncate">{titulo}</p>
                       <p className="text-[11px] text-[#8C7E75]">
                         {entrante
                           ? (meSuma ? `${otroUsuario?.nombre ?? 'Tu pareja'} te lo debe` : `Se lo debes a ${otroUsuario?.nombre ?? 'tu pareja'}`)
                           : 'Este mes quedó saldado'}
+                        {' · '}visible en Gastos → Ajustes
                       </p>
                     </div>
                     <p className="text-sm font-bold text-[#8C7E75]">
-                      {formatMonto(liq.monto)}
+                      {formatMonto(mov.monto)}
                     </p>
                   </div>
                 )

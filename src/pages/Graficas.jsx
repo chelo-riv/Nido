@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { CATEGORIAS } from '../lib/categorias'
+import { CATEGORIAS, esGastoAjuste } from '../lib/categorias'
 import { esMesActual, mesDesdeParams, rangoMes, referenciaMes } from '../lib/fechas'
 import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
@@ -20,6 +20,7 @@ const COLORES_CAT = {
   salud:           '#7FB5A0',
   servicios:       '#F4C47E',
   otros:           '#C4B5A0',
+  ajustes:         '#A89890',
 }
 
 function formatMonto(n) {
@@ -90,11 +91,13 @@ export default function Graficas() {
     if (user) cargarDatos()
   }, [user, mes]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalMes = gastos.reduce((a, g) => a + Number(g.monto), 0)
+  // Los arrastres (categoría Ajustes) no son gasto real: no entran en las gráficas.
+  const gastosReales = gastos.filter(g => !esGastoAjuste(g))
+  const totalMes = gastosReales.reduce((a, g) => a + Number(g.monto), 0)
 
   // Datos para pie chart por categoría
   const porCategoria = Object.entries(
-    gastos.reduce((acc, g) => {
+    gastosReales.reduce((acc, g) => {
       acc[g.categoria] = (acc[g.categoria] ?? 0) + Number(g.monto)
       return acc
     }, {})
@@ -108,7 +111,7 @@ export default function Graficas() {
     .sort((a, b) => b.value - a.value)
 
   // Datos para bar chart por semana
-  const porSemana = gastos.reduce((acc, g) => {
+  const porSemana = gastosReales.reduce((acc, g) => {
     const sem = semanaDelMes(g.fecha)
     acc[sem] = (acc[sem] ?? 0) + Number(g.monto)
     return acc
