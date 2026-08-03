@@ -6,9 +6,10 @@ export const UMBRAL_BALANCE_MANO = 0.5
 // Valor de liquidaciones.tipo para los movimientos que solo mueven un saldo de un mes a otro.
 export const TIPO_ARRASTRE = 'arrastre'
 
-// Las liquidaciones viejas no tienen tipo: son pagos reales.
+// Arrastre = columna tipo, o el prefijo en nota si PostgREST aún no ve la columna.
 export function esArrastre(liquidacion) {
-  return liquidacion.tipo === TIPO_ARRASTRE
+  if (liquidacion.tipo === TIPO_ARRASTRE) return true
+  return String(liquidacion.nota ?? '').startsWith('[arrastre]')
 }
 
 // Los gastos sin tipo son de antes de que existiera el campo: cuentan como compartidos.

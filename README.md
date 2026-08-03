@@ -134,7 +134,8 @@ alter table items_lista enable row level security;
 create policy "usuarios autenticados" on perfiles for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on gastos for all using (auth.role() = 'authenticated');
 create policy "usuarios autenticados" on presupuestos for all using (auth.role() = 'authenticated');
-create policy "usuarios autenticados" on liquidaciones for all using (auth.role() = 'authenticated');
+create policy "usuarios autenticados" on liquidaciones
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "usuarios autenticados" on wishlists;
 drop policy if exists "usuarios autenticados" on wishlist_items;
@@ -149,12 +150,21 @@ create policy "usuarios autenticados" on items_lista for all to authenticated us
 
 **Wishlists — proyectos que ya tenían la tabla `wishlist` (modelo antiguo):** la app usa `wishlists` y `wishlist_items`. Crea esas tablas y políticas con el bloque de arriba (o solo el fragmento `create table if not exists` + `alter` + `create policy` si el resto ya existe). Los datos viejos en `wishlist` no se migran solos; puedes copiarlos en el Table Editor o dejar la tabla sin usar.
 
-**Proyectos ya creados:** en el SQL Editor de Supabase, añade las columnas nuevas de liquidaciones. Sin `tipo` el botón de arrastrar saldo falla con un error de PostgREST:
+**Proyectos ya creados:** en el SQL Editor de Supabase, añade las columnas nuevas de liquidaciones y deja la política con `WITH CHECK` (sin eso el INSERT del arrastre puede fallar aunque el SELECT sí funcione). Después recarga el schema de PostgREST:
 
 ```sql
 alter table liquidaciones add column if not exists nota text;
 alter table liquidaciones add column if not exists tipo text not null default 'pago';
+
+drop policy if exists "usuarios autenticados" on liquidaciones;
+create policy "usuarios autenticados" on liquidaciones
+  for all to authenticated using (true) with check (true);
+
+-- Para que PostgREST vea la columna tipo de inmediato
+notify pgrst, 'reload schema';
 ```
+
+Si el arrastre sigue fallando con un mensaje de "schema cache" o de columna `tipo`, en el dashboard de Supabase ve a **Project Settings → API → Reload schema** (o vuelve a correr el `notify` de arriba).
 
 **Lista del súper — error RLS en `items_lista`:** si al agregar un ítem aparece *new row violates row-level security policy*, las tablas existen pero faltan políticas que permitan `INSERT` (o el `WITH CHECK` no aplica).
 

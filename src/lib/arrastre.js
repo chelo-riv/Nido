@@ -9,6 +9,14 @@
 import { TIPO_ARRASTRE } from './balance'
 import { etiquetaMes, rangoMes, sumarMeses } from './fechas'
 
+// Prefijo en nota por si la columna tipo aún no existe / PostgREST no la ve.
+const PREFIJO_NOTA = '[arrastre]'
+
+function notaConMarca(texto) {
+  const t = (texto ?? '').trim()
+  return t.startsWith(PREFIJO_NOTA) ? t : `${PREFIJO_NOTA} ${t}`.trim()
+}
+
 // balance viene de calcularBalance: positivo = me deben | negativo = debo.
 export function filasDeArrastre({ mes, balance, miId, otroId }) {
   const mesDestino = sumarMeses(mes, 1)
@@ -26,7 +34,7 @@ export function filasDeArrastre({ mes, balance, miId, otroId }) {
         // Se anota al revés del saldo para cancelarlo en el mes de origen.
         pagado_por: meDeben ? otroId : miId,
         pagado_a: meDeben ? miId : otroId,
-        nota: `Saldo arrastrado a ${etiquetaMes(mesDestino)}`,
+        nota: notaConMarca(`Saldo arrastrado a ${etiquetaMes(mesDestino)}`),
       },
       {
         monto,
@@ -35,7 +43,7 @@ export function filasDeArrastre({ mes, balance, miId, otroId }) {
         // En el destino se anota en el sentido del saldo original para recrearlo.
         pagado_por: meDeben ? miId : otroId,
         pagado_a: meDeben ? otroId : miId,
-        nota: `Saldo que viene de ${etiquetaMes(mes)}`,
+        nota: notaConMarca(`Saldo que viene de ${etiquetaMes(mes)}`),
       },
     ],
   }
@@ -47,10 +55,53 @@ export function esArrastreEntrante(liquidacion, mes) {
   return String(liquidacion.fecha).slice(0, 10) === rangoMes(mes).inicio
 }
 
+// ¿El fallo es porque PostgREST no conoce la columna tipo?
+function esErrorDeColumnaTipo(error) {
+  const texto = `${error?.message ?? ''} ${error?.details ?? ''} ${error?.hint ?? ''} ${error?.code ?? ''}`.toLowerCase()
+  return texto.includes('tipo') || texto.includes('schema cache') || texto.includes('pgrst204')
+}
+
+// Inserta las dos filas. Si la columna tipo no existe / no está en el cache, reintenta sin ella.
+export async function insertarArrastre(supabase, filas) {
+  const primerIntento = await supabase.from('liquidaciones').insert(filas)
+  if (!primerIntento.error) return primerIntento
+
+  if (!esErrorDeColumnaTipo(primerIntento.error)) return primerIntento
+
+  // Mismo movimiento, sin `tipo`: esArrastre() las reconoce por el prefijo de la nota.
+  const sinTipo = filas.map(({ tipo: _tipo, ...resto }) => ({
+    ...resto,
+    nota: notaConMarca(resto.nota),
+  }))
+  return supabase.from('liquidaciones').insert(sinTipo)
+}
+
 export function mensajeErrorArrastre(error) {
-  // Sin la columna nueva en Supabase el error de PostgREST no dice qué hay que hacer.
-  if (error?.message?.includes('tipo')) {
-    return 'Falta la columna "tipo" en la tabla liquidaciones. Corre el ALTER TABLE que viene en el README.'
+  const msg = error?.message ?? ''
+  const details = error?.details ?? ''
+  const hint = error?.hint ?? ''
+  const code = error?.code ?? ''
+  const todo = `${msg} ${details} ${hint} ${code}`.toLowerCase()
+
+  if (esErrorDeColumnaTipo(error)) {
+    return 'Falta la columna "tipo" (o PostgREST aún no la ve). Corre el ALTER TABLE del README y recarga el schema de la API.'
   }
-  return 'No se pudo arrastrar el saldo. Intenta de nuevo.'
+
+  if (todo.includes('row-level security') || todo.includes('rls') || code === '42501') {
+    return 'Supabase bloqueó el insert (RLS). Corre el bloque de políticas de liquidaciones del README.'
+  }
+
+  if (todo.includes('foreign key') || code === '23503') {
+    return 'El otro usuario no existe en auth.users. Revisa que ambos perfiles tengan el mismo id que su cuenta.'
+  }
+
+  // Siempre mostramos algo útil: sin esto queda el mensaje genérico y no se puede depurar.
+  const detalle = [code && `código ${code}`, msg, details, hint].filter(Boolean).join(' — ')
+  if (detalle) return `No se pudo arrastrar el saldo: ${detalle}`
+
+  try {
+    return `No se pudo arrastrar el saldo: ${JSON.stringify(error)}`
+  } catch {
+    return 'No se pudo arrastrar el saldo. Intenta de nuevo.'
+  }
 }

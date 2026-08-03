@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
 import { calcularBalance, UMBRAL_BALANCE_MANO } from '../lib/balance'
-import { esArrastreEntrante, filasDeArrastre, mensajeErrorArrastre } from '../lib/arrastre'
+import { esArrastreEntrante, filasDeArrastre, insertarArrastre, mensajeErrorArrastre } from '../lib/arrastre'
 import {
   esMesActual, etiquetaMes, fechaPorDefectoDelMes, mesDesdeFecha,
   mesDesdeParams, rangoMes, referenciaMes, sufijoMes, sumarMeses,
@@ -115,19 +115,25 @@ export default function Dashboard() {
   }
 
   // Manda lo que quedó pendiente del mes visible al mes siguiente.
+  // Se recalcula aquí (no se cierra sobre variables del render) para no arrastrar un saldo viejo.
   async function arrastrarSaldo() {
-    if (!otroUsuario?.id || estanAMano) return
+    const otro = perfiles.find(p => p.id !== user.id)
+    const { balance: saldo, estanAMano: aMano } = calcularBalance({
+      gastos, liquidaciones, userId: user.id,
+    })
+    if (!otro?.id || aMano) return
 
     setArrastrando(true)
     setErrorArrastre('')
 
     const { filas, mesDestino, monto } = filasDeArrastre({
-      mes, balance, miId: user.id, otroId: otroUsuario.id,
+      mes, balance: saldo, miId: user.id, otroId: otro.id,
     })
 
-    const { error } = await supabase.from('liquidaciones').insert(filas)
+    const { error } = await insertarArrastre(supabase, filas)
 
     if (error) {
+      console.error('Arrastre falló:', error)
       setErrorArrastre(mensajeErrorArrastre(error))
     } else {
       setAvisoArrastre({ mesDestino, monto })
