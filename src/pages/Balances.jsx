@@ -5,9 +5,10 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
 import { calcularBalance } from '../lib/balance'
+import { esArrastreEntrante, filasDeArrastre, mensajeErrorArrastre } from '../lib/arrastre'
 import {
   esMesActual, etiquetaMes, fechaPorDefectoDelMes, mesDesdeFecha,
-  mesDesdeParams, rangoMes, referenciaMes,
+  mesDesdeParams, rangoMes, referenciaMes, sumarMeses,
 } from '../lib/fechas'
 import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
@@ -41,6 +42,10 @@ export default function Balances() {
   const [mostrarDesglose, setMostrarDesglose] = useState(false)
   // Guarda el mes de un pago que se anotó con fecha fuera del mes visible.
   const [avisoMesGuardado, setAvisoMesGuardado] = useState('')
+  const [arrastrando, setArrastrando]   = useState(false)
+  // { mesDestino, monto } del último arrastre, para ofrecer el salto a ese mes.
+  const [avisoArrastre, setAvisoArrastre] = useState(null)
+  const [errorArrastre, setErrorArrastre] = useState('')
 
   // Cada carga lleva número: si contesta una petición vieja (cambio rápido de mes) se descarta.
   const peticionRef = useRef(0)
@@ -84,7 +89,32 @@ export default function Balances() {
   function cambiarMes(nuevoMes) {
     setMes(nuevoMes)
     setMostrarDesglose(false)
+    setAvisoArrastre(null)
+    setErrorArrastre('')
     cerrarFormLiquidar(nuevoMes)
+  }
+
+  // Manda lo que quedó pendiente del mes visible al mes siguiente.
+  async function arrastrarSaldo() {
+    if (!otroUsuario?.id || estanAMano) return
+
+    setArrastrando(true)
+    setErrorArrastre('')
+
+    const { filas, mesDestino, monto } = filasDeArrastre({
+      mes, balance, miId: user.id, otroId: otroUsuario.id,
+    })
+
+    const { error } = await supabase.from('liquidaciones').insert(filas)
+
+    if (error) {
+      setErrorArrastre(mensajeErrorArrastre(error))
+    } else {
+      setAvisoArrastre({ mesDestino, monto })
+      await cargarDatos()
+    }
+
+    setArrastrando(false)
   }
 
   async function liquidar() {
@@ -138,7 +168,8 @@ export default function Balances() {
   const miNombre    = miPerfil?.nombre ?? 'Yo'
 
   const {
-    compartidos, balanceBruto, pagosRecibidos, pagosRealizados, balance, estanAMano,
+    compartidos, balanceBruto, pagos, arrastres, arrastreNeto,
+    pagosRecibidos, pagosRealizados, balance, estanAMano,
   } = calcularBalance({ gastos, liquidaciones, userId: user.id })
 
   function abrirLiquidarDesdeSaldo() {
@@ -171,6 +202,11 @@ export default function Balances() {
   const nombreDeudor  = meDeben ? (otroUsuario?.nombre ?? 'Tu pareja') : miNombre
   const nombreAcreedor = meDeben ? miNombre : (otroUsuario?.nombre ?? 'Tu pareja')
   const referencia = referenciaMes(mes)
+
+  // Solo se puede arrastrar desde un mes cerrado: el siguiente del mes actual sería el futuro.
+  const mesSiguiente = sumarMeses(mes, 1)
+  const puedeArrastrar = !esMesActual(mes) && hayBalance && !!otroUsuario
+  const liquidado = pagosRecibidos + pagosRealizados
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] pb-24 flex flex-col">
@@ -220,7 +256,9 @@ export default function Balances() {
               <p className="text-4xl font-bold mb-1">{formatMonto(balance)}</p>
               {balanceBruto !== balance && (
                 <p className="text-xs opacity-70 mt-1">
-                  Bruto {formatMonto(balanceBruto)} · Liquidado {formatMonto(pagosRecibidos + pagosRealizados)}
+                  Bruto {formatMonto(balanceBruto)}
+                  {liquidado > 0 && ` · Liquidado ${formatMonto(liquidado)}`}
+                  {arrastreNeto !== 0 && ` · Arrastrado ${formatMonto(arrastreNeto)}`}
                 </p>
               )}
 
@@ -231,9 +269,47 @@ export default function Balances() {
               >
                 Registrar pago
               </button>
+
+              {/* Arrastre: pasa lo pendiente al mes siguiente sin que nadie transfiera nada */}
+              {puedeArrastrar && (
+                <>
+                  <button
+                    type="button"
+                    onClick={arrastrarSaldo}
+                    disabled={arrastrando}
+                    className="mt-2 w-full py-2.5 rounded-xl border border-white/40 text-white text-sm font-semibold active:scale-[0.98] transition-all disabled:opacity-60"
+                  >
+                    {arrastrando ? 'Arrastrando...' : `Arrastrar saldo a ${etiquetaMes(mesSiguiente)}`}
+                  </button>
+                  <p className="text-[11px] opacity-75 mt-2 leading-snug">
+                    Este mes queda en cero y el saldo se suma a {etiquetaMes(mesSiguiente)}. No cuenta como transferencia.
+                  </p>
+                </>
+              )}
             </>
           )}
         </div>
+
+        {avisoArrastre && (
+          <div className="rounded-xl border border-[#8BAF8D]/50 bg-[#F2F7F2] px-3 py-2 text-xs text-[#2D2926] flex items-center justify-between gap-2">
+            <span>
+              {formatMonto(avisoArrastre.monto)} de {etiquetaMes(mes)} se movieron a {etiquetaMes(avisoArrastre.mesDestino)}.
+            </span>
+            <button
+              type="button"
+              onClick={() => cambiarMes(avisoArrastre.mesDestino)}
+              className="flex-shrink-0 font-semibold text-[#D4845A]"
+            >
+              Ver ese mes
+            </button>
+          </div>
+        )}
+
+        {errorArrastre && (
+          <div className="rounded-xl border border-[#C0614A]/30 bg-[#FDF0EE] px-3 py-2 text-xs text-[#C0614A]">
+            {errorArrastre}
+          </div>
+        )}
 
         {/* Formulario de liquidación */}
         {mostrarLiquidar && otroUsuario && (
@@ -399,12 +475,47 @@ export default function Balances() {
           </div>
         )}
 
+        {/* Saldos movidos entre meses */}
+        {arrastres.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
+            <p className="text-sm font-semibold text-[#2D2926] mb-3">Saldos arrastrados</p>
+            <div className="flex flex-col gap-2">
+              {arrastres.map(liq => {
+                const entrante = esArrastreEntrante(liq, mes)
+                const meSuma = liq.pagado_por === user.id
+                return (
+                  <div key={liq.id} className="flex items-center gap-3 py-1.5">
+                    <div className="w-8 h-8 rounded-xl bg-[#FAF0EB] flex items-center justify-center text-base flex-shrink-0">
+                      🔁
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-[#2D2926]">
+                        {entrante
+                          ? `Viene de ${etiquetaMes(sumarMeses(mes, -1))}`
+                          : `Se movió a ${etiquetaMes(mesSiguiente)}`}
+                      </p>
+                      <p className="text-[11px] text-[#8C7E75]">
+                        {entrante
+                          ? (meSuma ? `${otroUsuario?.nombre ?? 'Tu pareja'} te lo debe` : `Se lo debes a ${otroUsuario?.nombre ?? 'tu pareja'}`)
+                          : 'Este mes quedó saldado'}
+                      </p>
+                    </div>
+                    <p className="text-sm font-bold text-[#8C7E75]">
+                      {formatMonto(liq.monto)}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Historial de liquidaciones */}
-        {liquidaciones.length > 0 && (
+        {pagos.length > 0 && (
           <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
             <p className="text-sm font-semibold text-[#2D2926] mb-3">Pagos registrados {referencia}</p>
             <div className="flex flex-col gap-2">
-              {liquidaciones.map(liq => {
+              {pagos.map(liq => {
                 const pagadorNombre = liq.pagado_por === user.id ? miNombre : (otroUsuario?.nombre ?? '?')
                 const receptorNombre = liq.pagado_a === user.id ? miNombre : (otroUsuario?.nombre ?? '?')
                 return (

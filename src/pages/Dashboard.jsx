@@ -5,9 +5,10 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { CATEGORIAS } from '../lib/categorias'
 import { calcularBalance, UMBRAL_BALANCE_MANO } from '../lib/balance'
+import { esArrastreEntrante, filasDeArrastre, mensajeErrorArrastre } from '../lib/arrastre'
 import {
   esMesActual, etiquetaMes, fechaPorDefectoDelMes, mesDesdeFecha,
-  mesDesdeParams, rangoMes, referenciaMes, sufijoMes,
+  mesDesdeParams, rangoMes, referenciaMes, sufijoMes, sumarMeses,
 } from '../lib/fechas'
 import SelectorMes from '../components/SelectorMes'
 import BottomNav from '../components/BottomNav'
@@ -43,6 +44,10 @@ export default function Dashboard() {
   const [mesesConMovimiento, setMesesConMovimiento] = useState([])
   const [loading, setLoading] = useState(true)
   const [actualizando, setActualizando] = useState(false)
+  const [arrastrando, setArrastrando] = useState(false)
+  // { mesDestino, monto } del último arrastre, para ofrecer el salto a ese mes.
+  const [avisoArrastre, setAvisoArrastre] = useState(null)
+  const [errorArrastre, setErrorArrastre] = useState('')
 
   // Cada carga lleva número: si contesta una petición vieja (cambio rápido de mes) se descarta.
   const peticionRef = useRef(0)
@@ -103,6 +108,35 @@ export default function Dashboard() {
     if (user) cargarDatos()
   }, [user, mes]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  function cambiarMes(nuevoMes) {
+    setMes(nuevoMes)
+    setAvisoArrastre(null)
+    setErrorArrastre('')
+  }
+
+  // Manda lo que quedó pendiente del mes visible al mes siguiente.
+  async function arrastrarSaldo() {
+    if (!otroUsuario?.id || estanAMano) return
+
+    setArrastrando(true)
+    setErrorArrastre('')
+
+    const { filas, mesDestino, monto } = filasDeArrastre({
+      mes, balance, miId: user.id, otroId: otroUsuario.id,
+    })
+
+    const { error } = await supabase.from('liquidaciones').insert(filas)
+
+    if (error) {
+      setErrorArrastre(mensajeErrorArrastre(error))
+    } else {
+      setAvisoArrastre({ mesDestino, monto })
+      await cargarDatos()
+    }
+
+    setArrastrando(false)
+  }
+
   async function cerrarSesion() {
     await supabase.auth.signOut()
   }
@@ -117,7 +151,7 @@ export default function Dashboard() {
 
   // ── Cálculos de balance ──────────────────────────────────────────────────
   const {
-    compartidos, balance, pagosRecibidos, pagosRealizados,
+    compartidos, balance, pagos, arrastres, pagosRecibidos, pagosRealizados,
     misPagos, otrosPagos, totalGastado: total, estanAMano,
   } = calcularBalance({ gastos, liquidaciones, userId: user.id })
 
@@ -134,6 +168,13 @@ export default function Dashboard() {
   const linkAgregar = esMesActual(mes) ? '/agregar' : `/agregar?fecha=${fechaPorDefectoDelMes(mes)}`
   const otrosMesesConMovimiento = mesesConMovimiento.filter(m => m !== mes).slice(0, 4)
 
+  // Arrastre: solo desde un mes cerrado, porque el siguiente del actual sería el futuro.
+  const mesSiguiente = sumarMeses(mes, 1)
+  const puedeArrastrar = !esMesActual(mes) && !estanAMano && !!otroUsuario
+  const sumaMontos = filas => filas.reduce((a, l) => a + Number(l.monto), 0)
+  const montoQueLlego = sumaMontos(arrastres.filter(l => esArrastreEntrante(l, mes)))
+  const montoQueSeFue = sumaMontos(arrastres.filter(l => !esArrastreEntrante(l, mes)))
+
   // ── Texto del balance ────────────────────────────────────────────────────
   let balanceTexto = ''
   let balanceSubtexto = ''
@@ -144,21 +185,28 @@ export default function Dashboard() {
     balanceTexto = '¡Están a mano!'
     const partes = []
     if (total > 0) partes.push(`${gastos.length} cargos · ${formatMonto(total)} en gastos`)
-    if (liquidaciones.length > 0) {
-      const p = liquidaciones.length
+    if (pagos.length > 0) {
+      const p = pagos.length
       partes.push(`${p} pago${p === 1 ? '' : 's'} registrado${p === 1 ? '' : 's'}`)
     }
+    if (montoQueSeFue > 0) partes.push(`saldo movido a ${etiquetaMes(mesSiguiente)}`)
     balanceSubtexto = partes.join(' · ') || `Sin deuda pendiente ${referencia}`
-  } else if (balance > UMBRAL_BALANCE_MANO) {
-    balanceTexto = formatMonto(saldoMostrarPesos(balance))
-    balanceSubtexto = otroUsuario
-      ? `${otroNombre} te debe · saldo neto del mes (${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'})`
-      : `Te deben · ${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'}`
   } else {
+    // De dónde sale el saldo: de gastos del mes o de lo que se arrastró del anterior.
+    let detalle = 'saldo neto del mes'
+    if (nCompartidos > 0) {
+      const s = nCompartidos === 1 ? '' : 's'
+      detalle = `saldo neto del mes (${nCompartidos} gasto${s} compartido${s})`
+    } else if (montoQueLlego > 0) {
+      detalle = `saldo arrastrado de ${etiquetaMes(sumarMeses(mes, -1))}`
+    }
+
     balanceTexto = formatMonto(saldoMostrarPesos(Math.abs(balance)))
-    balanceSubtexto = otroUsuario
-      ? `Le debes a ${otroNombre} · saldo neto del mes (${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'})`
-      : `Debes · saldo neto del mes (${nCompartidos} gasto${nCompartidos === 1 ? '' : 's'} compartido${nCompartidos === 1 ? '' : 's'})`
+    if (balance > UMBRAL_BALANCE_MANO) {
+      balanceSubtexto = otroUsuario ? `${otroNombre} te debe · ${detalle}` : `Te deben · ${detalle}`
+    } else {
+      balanceSubtexto = otroUsuario ? `Le debes a ${otroNombre} · ${detalle}` : `Debes · ${detalle}`
+    }
   }
 
   const balanceColor = estanAMano || balance > UMBRAL_BALANCE_MANO ? 'bg-[#8BAF8D]' : 'bg-[#D4845A]'
@@ -184,7 +232,7 @@ export default function Dashboard() {
 
         {/* ── MES DE LA SECCIÓN DE FINANZAS ─────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-[#EDE8E3] p-2">
-          <SelectorMes mes={mes} onCambiar={setMes} className="min-w-0" />
+          <SelectorMes mes={mes} onCambiar={cambiarMes} className="min-w-0" />
         </div>
 
         {/* ── TARJETA FINANZAS (full width) ─────────────────────────────── */}
@@ -229,7 +277,54 @@ export default function Dashboard() {
               Transferencias del mes registradas · Recibiste {formatMonto(pagosRecibidos)} · Pagaste {formatMonto(pagosRealizados)}
             </p>
           )}
+          {/* Si no hubo gastos, el subtexto ya dice que el saldo viene de un arrastre */}
+          {montoQueLlego > 0 && nCompartidos > 0 && (
+            <p className="text-[11px] opacity-90 mt-3 leading-snug border-t border-white/20 pt-3">
+              Incluye {formatMonto(montoQueLlego)} arrastrados de {etiquetaMes(sumarMeses(mes, -1))}
+            </p>
+          )}
         </button>
+
+        {/* Arrastre: pasa lo pendiente al mes siguiente sin que nadie transfiera nada */}
+        {puedeArrastrar && (
+          <div className="bg-white rounded-2xl border border-[#EDE8E3] p-3 flex flex-col gap-2">
+            <p className="text-[11px] text-[#8C7E75] leading-snug">
+              Este saldo quedó pendiente. Si lo arrastras, {etiquetaMes(mes)} queda en cero y el monto se suma
+              a {etiquetaMes(mesSiguiente)}.
+            </p>
+            <button
+              type="button"
+              onClick={arrastrarSaldo}
+              disabled={arrastrando}
+              className="w-full py-2.5 rounded-xl bg-[#2D2926] text-white text-sm font-semibold active:scale-[0.98] transition-all disabled:opacity-60"
+            >
+              {arrastrando
+                ? 'Arrastrando...'
+                : `Arrastrar ${formatMonto(saldoMostrarPesos(Math.abs(balance)))} a ${etiquetaMes(mesSiguiente)}`}
+            </button>
+          </div>
+        )}
+
+        {avisoArrastre && (
+          <div className="rounded-xl border border-[#8BAF8D]/50 bg-[#F2F7F2] px-3 py-2 text-xs text-[#2D2926] flex items-center justify-between gap-2">
+            <span>
+              {formatMonto(avisoArrastre.monto)} de {etiquetaMes(mes)} se movieron a {etiquetaMes(avisoArrastre.mesDestino)}.
+            </span>
+            <button
+              type="button"
+              onClick={() => cambiarMes(avisoArrastre.mesDestino)}
+              className="flex-shrink-0 font-semibold text-[#D4845A]"
+            >
+              Ver ese mes
+            </button>
+          </div>
+        )}
+
+        {errorArrastre && (
+          <div className="rounded-xl border border-[#C0614A]/30 bg-[#FDF0EE] px-3 py-2 text-xs text-[#C0614A]">
+            {errorArrastre}
+          </div>
+        )}
 
         {/* Meses con movimiento: atajo cuando el mes visible está vacío */}
         {!hayMovimiento && otrosMesesConMovimiento.length > 0 && (

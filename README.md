@@ -65,6 +65,7 @@ create table presupuestos (
 );
 
 -- Liquidaciones (saldos de deuda)
+-- tipo: 'pago' = transferencia real | 'arrastre' = saldo movido de un mes a otro
 create table liquidaciones (
   id uuid default gen_random_uuid() primary key,
   monto numeric(10,2) not null,
@@ -72,6 +73,7 @@ create table liquidaciones (
   pagado_a uuid references auth.users not null,
   fecha date not null default current_date,
   nota text,
+  tipo text not null default 'pago',
   created_at timestamptz default now()
 );
 
@@ -147,10 +149,11 @@ create policy "usuarios autenticados" on items_lista for all to authenticated us
 
 **Wishlists — proyectos que ya tenían la tabla `wishlist` (modelo antiguo):** la app usa `wishlists` y `wishlist_items`. Crea esas tablas y políticas con el bloque de arriba (o solo el fragmento `create table if not exists` + `alter` + `create policy` si el resto ya existe). Los datos viejos en `wishlist` no se migran solos; puedes copiarlos en el Table Editor o dejar la tabla sin usar.
 
-**Proyectos ya creados:** en el SQL Editor de Supabase, añade la columna opcional de nota en liquidaciones:
+**Proyectos ya creados:** en el SQL Editor de Supabase, añade las columnas nuevas de liquidaciones. Sin `tipo` el botón de arrastrar saldo falla con un error de PostgREST:
 
 ```sql
 alter table liquidaciones add column if not exists nota text;
+alter table liquidaciones add column if not exists tipo text not null default 'pago';
 ```
 
 **Lista del súper — error RLS en `items_lista`:** si al agregar un ítem aparece *new row violates row-level security policy*, las tablas existen pero faltan políticas que permitan `INSERT` (o el `WITH CHECK` no aplica).
@@ -206,7 +209,8 @@ src/
 │   ├── supabase.js          # Cliente de Supabase (singleton)
 │   ├── categorias.js        # Catálogo de categorías con emoji y label
 │   ├── fechas.js            # Helpers de mes "YYYY-MM" (rango, etiqueta, param ?mes=)
-│   └── balance.js           # Cálculo del balance neto de un mes (gastos + liquidaciones)
+│   ├── balance.js           # Cálculo del balance neto de un mes (gastos + liquidaciones)
+│   └── arrastre.js          # Movimientos espejo para pasar un saldo pendiente al mes siguiente
 ├── pages/
 │   ├── Login.jsx            # Login + Registro (tabs)
 │   ├── Dashboard.jsx        # Balance del mes con navegación entre meses + últimos gastos
