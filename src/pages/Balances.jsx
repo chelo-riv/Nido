@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -38,7 +38,16 @@ export default function Balances() {
   const [direccionTransferencia, setDireccionTransferencia] = useState('recibi')
   const [fechaLiquidacion, setFechaLiquidacion] = useState(() => fechaPorDefectoDelMes(mesDesdeParams(searchParams)))
   const [notaLiquidacion, setNotaLiquidacion] = useState('')
+  const [errorLiquidar, setErrorLiquidar] = useState('')
   const [guardando, setGuardando]       = useState(false)
+  // Edición de un pago ya registrado.
+  const [editandoId, setEditandoId]     = useState(null)
+  const [editMonto, setEditMonto]       = useState('')
+  const [editDireccion, setEditDireccion] = useState('recibi')
+  const [editFecha, setEditFecha]       = useState('')
+  const [editNota, setEditNota]         = useState('')
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
+  const [errorEdit, setErrorEdit]       = useState('')
   const [mostrarDesglose, setMostrarDesglose] = useState(false)
   // Guarda el mes de un pago que se anotó con fecha fuera del mes visible.
   const [avisoMesGuardado, setAvisoMesGuardado] = useState('')
@@ -91,6 +100,7 @@ export default function Balances() {
     setMostrarDesglose(false)
     setAvisoArrastre(null)
     setErrorArrastre('')
+    cerrarEditarPago()
     cerrarFormLiquidar(nuevoMes)
   }
 
@@ -123,11 +133,30 @@ export default function Balances() {
     setArrastrando(false)
   }
 
+  function mensajeErrorLiquidar(error) {
+    const msg = error?.message ?? ''
+    const details = error?.details ?? ''
+    const hint = error?.hint ?? ''
+    const code = error?.code ?? ''
+    const todo = `${msg} ${details} ${hint} ${code}`.toLowerCase()
+
+    // Sin esta columna el insert con nota falla y, antes, el error no se mostraba.
+    if (code === 'PGRST204' || (todo.includes('nota') && (todo.includes('column') || todo.includes('schema')))) {
+      return 'No se pudo guardar la nota: falta la columna "nota" en liquidaciones, o la API aún no la ve. En el SQL Editor corre: alter table liquidaciones add column if not exists nota text; notify pgrst, \'reload schema\';'
+    }
+
+    const detalle = [code && `código ${code}`, msg, details, hint].filter(Boolean).join(' — ')
+    return detalle
+      ? `No se pudo guardar: ${detalle}`
+      : 'No se pudo guardar la transferencia.'
+  }
+
   async function liquidar() {
     if (!montoLiquidar || Number(montoLiquidar) <= 0 || !otroUsuario?.id) return
     if (!fechaLiquidacion || fechaLiquidacion.length < 10) return
 
     setGuardando(true)
+    setErrorLiquidar('')
 
     const pagadoPor = direccionTransferencia === 'recibi' ? otroUsuario.id : user.id
     const pagadoA   = direccionTransferencia === 'recibi' ? user.id : otroUsuario.id
@@ -143,7 +172,10 @@ export default function Balances() {
 
     const { error } = await supabase.from('liquidaciones').insert(payload)
 
-    if (!error) {
+    if (error) {
+      console.error('Liquidación falló:', error)
+      setErrorLiquidar(mensajeErrorLiquidar(error))
+    } else {
       const mesDelPago = mesDesdeFecha(fechaLiquidacion)
       setMontoLiquidar('')
       setNotaLiquidacion('')
@@ -159,6 +191,77 @@ export default function Balances() {
     }
 
     setGuardando(false)
+  }
+
+  function abrirEditarPago(liq) {
+    setEditandoId(liq.id)
+    setEditMonto(String(Number(liq.monto)))
+    setEditDireccion(liq.pagado_a === user.id ? 'recibi' : 'pague')
+    setEditFecha(String(liq.fecha).slice(0, 10))
+    setEditNota(liq.nota ?? '')
+    setErrorEdit('')
+    setMostrarLiquidar(false)
+  }
+
+  function cerrarEditarPago() {
+    setEditandoId(null)
+    setErrorEdit('')
+  }
+
+  async function guardarEdicionPago(e) {
+    e?.preventDefault()
+    const otro = perfiles.find(p => p.id !== user.id)
+    if (!editandoId || !editMonto || Number(editMonto) <= 0 || !otro?.id) return
+    if (!editFecha || editFecha.length < 10) return
+
+    setGuardandoEdit(true)
+    setErrorEdit('')
+
+    const { error } = await supabase
+      .from('liquidaciones')
+      .update({
+        monto: Number(editMonto),
+        pagado_por: editDireccion === 'recibi' ? otro.id : user.id,
+        pagado_a: editDireccion === 'recibi' ? user.id : otro.id,
+        fecha: editFecha,
+        nota: editNota.trim() || null,
+      })
+      .eq('id', editandoId)
+
+    if (error) {
+      console.error('Editar pago falló:', error)
+      setErrorEdit(mensajeErrorLiquidar(error))
+    } else {
+      const mesDelPago = mesDesdeFecha(editFecha)
+      cerrarEditarPago()
+      if (mesDelPago !== mes) {
+        setAvisoMesGuardado(mesDelPago)
+        window.setTimeout(() => setAvisoMesGuardado(''), 9000)
+      }
+      await cargarDatos()
+    }
+
+    setGuardandoEdit(false)
+  }
+
+  async function eliminarPago(id) {
+    if (!window.confirm('¿Eliminar este pago? El balance del mes va a cambiar.')) return
+
+    setGuardandoEdit(true)
+    setErrorEdit('')
+
+    const { error } = await supabase.from('liquidaciones').delete().eq('id', id)
+
+    if (error) {
+      console.error('Eliminar pago falló:', error)
+      setErrorEdit(mensajeErrorLiquidar(error))
+      setGuardandoEdit(false)
+      return
+    }
+
+    cerrarEditarPago()
+    setGuardandoEdit(false)
+    await cargarDatos()
   }
 
   if (loading) {
@@ -186,6 +289,8 @@ export default function Balances() {
     setMontoLiquidar(estanAMano ? '' : String(Math.round(Math.abs(balance))))
     setFechaLiquidacion(fechaPorDefectoDelMes(mes))
     setNotaLiquidacion('')
+    setErrorLiquidar('')
+    setEditandoId(null)
     setMostrarLiquidar(true)
   }
 
@@ -194,6 +299,8 @@ export default function Balances() {
     setMontoLiquidar('')
     setFechaLiquidacion(fechaPorDefectoDelMes(mes))
     setNotaLiquidacion('')
+    setErrorLiquidar('')
+    setEditandoId(null)
     setMostrarLiquidar(true)
   }
 
@@ -203,6 +310,7 @@ export default function Balances() {
     setDireccionTransferencia('recibi')
     setFechaLiquidacion(fechaPorDefectoDelMes(mesReferencia))
     setNotaLiquidacion('')
+    setErrorLiquidar('')
   }
 
   const hayBalance = !estanAMano
@@ -321,7 +429,13 @@ export default function Balances() {
 
         {/* Formulario de liquidación */}
         {mostrarLiquidar && otroUsuario && (
-          <div className="bg-white rounded-2xl border border-[#EDE8E3] p-4">
+          <form
+            className="bg-white rounded-2xl border border-[#EDE8E3] p-4"
+            onSubmit={e => {
+              e.preventDefault()
+              liquidar()
+            }}
+          >
             <p className="text-sm font-semibold text-[#2D2926] mb-2">¿Quién transfirió?</p>
             <div className="flex gap-2 mb-4">
               <button
@@ -373,8 +487,7 @@ export default function Balances() {
                 className="flex-1 px-4 py-3 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-lg font-bold text-center focus:outline-none focus:border-[#D4845A]"
               />
               <button
-                type="button"
-                onClick={liquidar}
+                type="submit"
                 disabled={guardando}
                 className="px-4 py-3 rounded-xl bg-[#D4845A] text-white font-semibold flex items-center gap-1.5 disabled:opacity-60"
               >
@@ -416,6 +529,10 @@ export default function Balances() {
               />
             </div>
 
+            {errorLiquidar && (
+              <p className="mt-3 text-xs text-[#C0614A] leading-snug">{errorLiquidar}</p>
+            )}
+
             <button
               type="button"
               onClick={cerrarFormLiquidar}
@@ -423,7 +540,7 @@ export default function Balances() {
             >
               Cancelar
             </button>
-          </div>
+          </form>
         )}
 
         {/* Desglose de gastos compartidos (sin ajustes: esos van en "Saldos arrastrados") */}
@@ -527,25 +644,108 @@ export default function Balances() {
               {pagos.map(liq => {
                 const pagadorNombre = liq.pagado_por === user.id ? miNombre : (otroUsuario?.nombre ?? '?')
                 const receptorNombre = liq.pagado_a === user.id ? miNombre : (otroUsuario?.nombre ?? '?')
+                const editando = editandoId === liq.id
                 return (
-                  <div key={liq.id} className="flex items-center gap-3 py-1.5">
-                    <div className="w-8 h-8 rounded-xl bg-[#F0F5F0] flex items-center justify-center text-base flex-shrink-0">
-                      💸
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-[#2D2926]">
-                        {pagadorNombre} le pagó a {receptorNombre}
-                      </p>
-                      <p className="text-[11px] text-[#8C7E75]">{formatFecha(liq.fecha)}</p>
-                      {liq.nota && (
-                        <p className="text-[11px] text-[#8C7E75] mt-0.5 italic truncate" title={liq.nota}>
-                          {liq.nota}
+                  <div key={liq.id} className="py-1.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-[#F0F5F0] flex items-center justify-center text-base flex-shrink-0">
+                        💸
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-[#2D2926]">
+                          {pagadorNombre} le pagó a {receptorNombre}
                         </p>
-                      )}
+                        <p className="text-[11px] text-[#8C7E75]">{formatFecha(liq.fecha)}</p>
+                        {liq.nota && (
+                          <p className="text-[11px] text-[#8C7E75] mt-0.5 italic truncate" title={liq.nota}>
+                            {liq.nota}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-sm font-bold text-[#8BAF8D]">
+                        {formatMonto(liq.monto)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => editando ? cerrarEditarPago() : abrirEditarPago(liq)}
+                        className="w-8 h-8 rounded-xl border border-[#EDE8E3] text-[#8C7E75] flex items-center justify-center flex-shrink-0"
+                        aria-label={editando ? 'Cerrar edición' : 'Editar pago'}
+                      >
+                        <Pencil size={14} />
+                      </button>
                     </div>
-                    <p className="text-sm font-bold text-[#8BAF8D]">
-                      {formatMonto(liq.monto)}
-                    </p>
+
+                    {editando && otroUsuario && (
+                      <form onSubmit={guardarEdicionPago} className="mt-3 flex flex-col gap-3">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditDireccion('recibi')}
+                            className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold border ${
+                              editDireccion === 'recibi'
+                                ? 'bg-[#2D2926] text-white border-[#2D2926]'
+                                : 'bg-[#FAF7F4] text-[#8C7E75] border-[#EDE8E3]'
+                            }`}
+                          >
+                            {otroUsuario.nombre} me pagó
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditDireccion('pague')}
+                            className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold border ${
+                              editDireccion === 'pague'
+                                ? 'bg-[#2D2926] text-white border-[#2D2926]'
+                                : 'bg-[#FAF7F4] text-[#8C7E75] border-[#EDE8E3]'
+                            }`}
+                          >
+                            Yo le pagué a {otroUsuario.nombre}
+                          </button>
+                        </div>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          value={editMonto}
+                          onChange={e => setEditMonto(e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm font-bold text-center focus:outline-none focus:border-[#D4845A]"
+                        />
+                        <input
+                          type="date"
+                          value={editFecha}
+                          onChange={e => setEditFecha(e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A]"
+                        />
+                        <input
+                          type="text"
+                          value={editNota}
+                          onChange={e => setEditNota(e.target.value)}
+                          placeholder="Nota (opcional)"
+                          maxLength={200}
+                          className="w-full px-4 py-2.5 rounded-xl border border-[#EDE8E3] bg-[#FAF7F4] text-[#2D2926] text-sm focus:outline-none focus:border-[#D4845A]"
+                        />
+                        {errorEdit && (
+                          <p className="text-xs text-[#C0614A] leading-snug">{errorEdit}</p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="submit"
+                            disabled={guardandoEdit}
+                            className="flex-1 py-2.5 rounded-xl bg-[#D4845A] text-white text-sm font-semibold disabled:opacity-60"
+                          >
+                            {guardandoEdit ? '...' : 'Guardar cambios'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => eliminarPago(liq.id)}
+                            disabled={guardandoEdit}
+                            className="px-3 py-2.5 rounded-xl border border-[#C0614A]/40 text-[#C0614A] text-sm font-semibold disabled:opacity-60"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </form>
+                    )}
                   </div>
                 )
               })}

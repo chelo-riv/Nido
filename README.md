@@ -235,7 +235,7 @@ src/
 │   ├── Gastos.jsx           # Lista por mes (navegación) + filtros + editar/eliminar inline
 │   ├── AgregarGasto.jsx     # Formulario de nuevo gasto (acepta ?fecha= para meses pasados)
 │   ├── EditarGasto.jsx      # Formulario de edición (/editar/:id)
-│   ├── Balances.jsx         # Balance por mes + desglose + liquidaciones (dirección, cantidad, fecha, nota)
+│   ├── Balances.jsx         # Balance por mes + desglose + liquidaciones (crear, editar, eliminar)
 │   ├── Presupuestos.jsx     # Límites por categoría con barra de progreso
 │   ├── Graficas.jsx         # Pie chart por categoría + barras por semana
 │   ├── Wishlist.jsx         # Índice de wishlists (crear / abrir / archivadas)
@@ -253,7 +253,7 @@ Todas las pantallas de finanzas se ven mes por mes y se navegan con el mismo con
 |---|---|---|
 | Dashboard | Balance neto, quién pagó cuánto, transferencias y últimos gastos | Arrastrar el saldo pendiente y atajo para agregar un gasto con fecha de ese mes |
 | Gastos | Lista filtrable de gastos | Editar o eliminar cualquier gasto |
-| Balances | Balance neto, desglose, pagos registrados y saldos arrastrados | Registrar un pago con la fecha que sea y arrastrar el saldo pendiente |
+| Balances | Balance neto, desglose, pagos registrados y saldos arrastrados | Registrar, editar o eliminar un pago, y arrastrar el saldo pendiente |
 | Gráficas | Categorías y semanas | — |
 
 Detalles útiles:
@@ -263,6 +263,7 @@ Detalles útiles:
 - Si el mes que se está viendo no tiene nada, el Dashboard muestra atajos a los meses que sí tienen movimiento.
 - Al agregar un gasto desde un mes pasado, la fecha se propone en ese mes y al guardar se vuelve al mes del gasto.
 - Al registrar un pago en Balances, la fecha por defecto es el último día del mes visible (u hoy, si es el mes actual). Si se guarda con una fecha de otro mes, aparece un aviso con el atajo para ir a verlo.
+- Cada pago registrado se puede corregir (quién pagó, monto, fecha y nota) o eliminar con el lápiz de esa fila. Si la fecha nueva cae en otro mes, el pago se mueve a ese mes.
 
 ### Arrastrar el saldo al mes siguiente
 
